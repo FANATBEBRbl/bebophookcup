@@ -1,0 +1,7 @@
+{
+  "slug": "bebop-cup",
+  "name": "Bebop Cup",
+  "version": "0.1.0",
+  "language": "LANGUAGE_TYPESCRIPT",
+  "map": "bebop_arena_small"
+}
