@@ -263,7 +263,7 @@ export class Rounds {
             borderRadius: 12 },
         }))
       }
-      if (choosing || participant) {
+      if (useCursor) {
         const isReady = this.isReady(viewer.player)
         const actions = choosing ? [0, 1].map(i => Action({
           disabled: !!seats[i], children: seats[i] ? `P${i + 1} · занято` : `Играть за P${i + 1}`,

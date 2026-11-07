@@ -76,8 +76,10 @@ buttons[0].onPress(b); assert.equal(picker.isReady(b),false)
 buttons[0].onPress(a); assert.equal(picker.isReady(a),true)
 renderParticipant()
 buttons[0].onPress(a); assert.equal(picker.isReady(a),false)
-picker.phase = 'live'
-renderParticipant()
-assert.equal(buttons.length,1)
-assert.equal(cursors.at(-1),false)
-buttons[0].onPress(a); assert.equal(left,a)
+buttons[1].onPress(a); assert.equal(left,a)
+for (const phase of ['prepare','countdown','live','break']) {
+  picker.phase = phase
+  renderParticipant()
+  assert.equal(buttons.length,0,phase)
+  assert.equal(cursors.at(-1),false)
+}
