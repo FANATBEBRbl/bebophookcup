@@ -1,7 +1,15 @@
-import { hide, createEntity, fireInput, show, hideHud, trace, Layers, TopStrip, Score, jsx, type Player, type Vector, type Angles } from 'modlock'
+import { readFile, writeFile, hide, createEntity, fireInput, show, hideHud, trace, Layers, TopStrip, Score, jsx, type Player, type Vector, type Angles } from 'modlock'
 import { countdown } from './countdown'
 
 type Spawn = { position: Vector; facing: Angles }
+const spawnFile = 'bebop_arena_small.spawns.v1.json'
+function validSpawn(value: unknown): value is Spawn {
+  if (!value || typeof value !== 'object' || !('position' in value) || !('facing' in value)) return false
+  const { position, facing } = value as Spawn
+  return !!position && !!facing && [position.x, position.y, position.z,
+    facing.pitch, facing.yaw, facing.roll].every(Number.isFinite)
+}
+
 const phrases = ['DAVAI BRATAN', 'OPA HU4OK', 'SVEZHEE MYASO', 'IDI SYUDA',
   'LOVI PODAROK', 'NU VSE, PRIEHALI', 'BRATAN, NE PROMAHNIS', 'ETO MOI HU4OK']
 export class Rounds {
@@ -45,17 +53,50 @@ export class Rounds {
 
   isReady(player: Player | undefined): boolean { return !!player && this.readyPlayers.has(player) }
 
+  private invalidSpawnFile = false
+
+  loadSpawns(): void {
+    this.previousPair = ''
+    this.pool = []
+    this.invalidSpawnFile = false
+    const text = readFile(spawnFile)
+    if (text === undefined) return
+    try {
+      const points: unknown = JSON.parse(text)
+      if (!Array.isArray(points) || points.length > 32 || !points.every(validSpawn)) throw Error('invalid spawn list')
+      this.pool = points
+      console.log('[Hook Arena] Loaded spawn points:', points.length)
+    } catch {
+      this.invalidSpawnFile = true
+      console.log('[Hook Arena] Invalid spawn file:', spawnFile)
+    }
+  }
+
+  private saveSpawns(points: Spawn[]): boolean {
+    if (!writeFile(spawnFile, JSON.stringify(points))) return false
+    this.pool = points
+    this.invalidSpawnFile = false
+    return true
+  }
+
   addSpawn(player: Player): string {
+    if (this.invalidSpawnFile) return 'Saved spawn file is damaged. Use /spawnclear to replace it.'
     const pawn = player.pawn()
     if (!pawn || pawn.health <= 0) return 'Stand at a safe spawn location while alive.'
     if (this.phase !== 'waiting' && this.phase !== 'error' && this.phase !== 'finished') return 'Leave the arena before editing spawn points.'
     if (this.pool.length >= 32) return 'Limit: 32 spawn points.'
     if (this.pool.some((s) => Math.hypot(s.position.x - pawn.position.x, s.position.y - pawn.position.y, s.position.z - pawn.position.z) < 100)) return 'Too close to an existing spawn.'
-    this.pool.push({ position: { ...pawn.position }, facing: { ...pawn.eyeAngles } })
+    const point = { position: { ...pawn.position }, facing: { ...pawn.eyeAngles } }
+    if (!validSpawn(point) || !this.saveSpawns([...this.pool, point])) return 'Could not save spawn. Pool unchanged.'
     return `Spawn ${this.pool.length} saved. Place at least 4, behind cover, 800+ units apart.`
   }
 
-  clearSpawns(): void { this.reset(); this.pool = []; this.previousPair = '' }
+  clearSpawns(): boolean {
+    if (!this.saveSpawns([])) return false
+    this.reset()
+    this.previousPair = ''
+    return true
+  }
 
   private choosePair(): boolean {
     if (this.pool.length < 4) return false

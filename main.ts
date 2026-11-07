@@ -41,7 +41,7 @@ onWorld(() => {
   console.log('[Hook Arena] sv_cheats=1 request accepted:', setServerVariable('sv_cheats', true))
   console.log('[Hook Arena] Allow duplicate heroes:', setServerVariable('citadel_allow_duplicate_heroes', true))
   reset()
-  rounds.clearSpawns()
+  rounds.loadSpawns()
   rounds.startMapHud()
   seats.fill(undefined)
   warpStoneGrants.clear()
@@ -298,6 +298,5 @@ command('spawnclear', (player) => {
     player.chat('[Hook Arena] Remove the bot and /hookleave before clearing spawns.')
     return
   }
-  rounds.clearSpawns()
-  player.chat('[Hook Arena] Spawn pool cleared.')
+  player.chat(rounds.clearSpawns() ? '[Hook Arena] Spawn pool cleared.' : '[Hook Arena] Could not save. Pool unchanged.')
 })

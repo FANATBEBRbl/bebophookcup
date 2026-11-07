@@ -2,7 +2,8 @@ const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/st
 const {stripTypeScriptTypes}=require('node:module');
 let draws=0; let cover=true;
 let clears=0;
-const context={hide:()=>{clears++;return true},jsx:(type,props)=>({type,props}),countdown:(round,remaining)=>({round,remaining}),hideHud:()=>true,Layers:{staticLevel:1n},trace:({start,end})=>cover?{startSolid:false,position:{x:(start.x+end.x)/2,y:(start.y+end.y)/2,z:start.z}}:undefined,show:()=>{draws++;return true},TopStrip:x=>x,Score:x=>x,Banner:x=>x};
+let stored, writable = true;
+const context={readFile:()=>stored,writeFile:(name,text)=>{if (!writable) return false;stored=text;return true},hide:()=>{clears++;return true},jsx:(type,props)=>({type,props}),countdown:(round,remaining)=>({round,remaining}),hideHud:()=>true,Layers:{staticLevel:1n},trace:({start,end})=>cover?{startSolid:false,position:{x:(start.x+end.x)/2,y:(start.y+end.y)/2,z:start.z}}:undefined,show:()=>{draws++;return true},TopStrip:x=>x,Score:x=>x,Banner:x=>x};
 vm.createContext(context);
 vm.runInContext(stripTypeScriptTypes(fs.readFileSync('rounds.ts','utf8').replace(/^import .*\r?\n/gm,'').replace('export class Rounds','class Rounds'))+'\nglobalThis.flow=new Rounds()',context);
 function player(team,x){return {state:{team,health:100,position:{x,y:0,z:0},eyeAngles:{pitch:0,yaw:0,roll:0}},frozen:false,revives:0,blockInput(){return true},pawn(){return this.state},abilities(){return [{name:'citadel_ability_hook'}]},freeze(v){this.frozen=v;return true},teleport(p){this.state.position={...p};return true},refreshAbility(name){assert.equal(name,'upgrade_warp_stone');return true},setAbility(settings){this.hookEnd=settings.cooldownEnd;return true},respawn(){this.revives++;this.state.health=100;return true}}}
@@ -23,3 +24,23 @@ console.log('PASS: countdown, mobile countdown, delayed respawn, swapped positio
 
 
 
+
+const fresh = vm.runInContext('new Rounds()',context)
+fresh.loadSpawns()
+assert.equal(fresh.addSpawn(a),'Too close to an existing spawn.')
+assert.equal(JSON.parse(stored).length,4)
+a.state.position.x=5000
+writable=false
+assert.match(fresh.addSpawn(a),/unchanged/)
+assert.equal(fresh.clearSpawns(),false)
+assert.equal(JSON.parse(stored).length,4)
+writable=true
+stored='broken'
+fresh.loadSpawns()
+assert.match(fresh.addSpawn(a),/damaged/)
+assert.equal(stored,'broken')
+assert.equal(fresh.clearSpawns(),true)
+fresh.loadSpawns()
+assert.match(fresh.addSpawn(a),/Spawn 1 saved/)
+assert.deepEqual(JSON.parse(stored)[0],{position:a.state.position,facing:a.state.eyeAngles})
+console.log('PASS: spawn persistence, failed writes, damaged file and explicit clear')
