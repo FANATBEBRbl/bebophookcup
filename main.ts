@@ -11,6 +11,7 @@ let scores = [0, 0]
 let winner = 0
 const seats: (Player | undefined)[] = [undefined, undefined]
 const warpStoneGrants = new Map<Player, { entity: number; retryAt: number }>()
+const pickerEnabled = new Set<Player>()
 const lobbyRetry = new Map<Player, number>()
 const caught: (number | undefined)[] = [undefined, undefined]
 let practiceBot: Player | undefined
@@ -46,6 +47,7 @@ onWorld(() => {
   seats.fill(undefined)
   warpStoneGrants.clear()
   lobbyRetry.clear()
+  pickerEnabled.clear()
   setServerVariable('citadel_server_max_spectator_slots', 8)
   caught.fill(undefined)
   practiceBot = undefined
@@ -76,6 +78,10 @@ command('hookjoin', (player, args) => {
     player.chat('Не удалось выбрать Bebop. Повтори /hookjoin через секунду.')
     return
   }
+  occupySide(player, index)
+})
+
+function occupySide(player: Player, index: number): void {
   lobbyRetry.delete(player)
   const previous = seats.indexOf(player)
   if (previous >= 0) seats[previous] = undefined
@@ -83,7 +89,7 @@ command('hookjoin', (player, args) => {
   reset()
   caught.fill(undefined)
   announce(`[Hook Arena] Player slot ${player.slot} joined P${index + 1}. Type /ready when Bebop appears.`)
-})
+}
 
 function leave(player: Player): void {
   warpStoneGrants.delete(player)
@@ -101,6 +107,7 @@ command('hookleave', (player) => {
 })
 onPlayerJoin((event) => rounds.forgetHud(event.connection.player))
 onPlayerLeave((event) => {
+  pickerEnabled.delete(event.connection.player)
   lobbyRetry.delete(event.connection.player)
   rounds.forgetHud(event.connection.player)
   leave(event.connection.player)
@@ -149,10 +156,26 @@ onFrame(({ timeSeconds }) => {
   for (const connection of players()) {
     if (!connection.ready || connection.bot || seats.includes(connection.player)) continue
     const retry = lobbyRetry.get(connection.player)
-    if (retry === Infinity || (retry !== undefined && timeSeconds < retry)) continue
+    if (retry === Infinity) {
+      const pawn = connection.player.pawn()
+      if (!pawn || (pawn.team !== 2 && pawn.team !== 3)) {
+        pickerEnabled.add(connection.player)
+        continue
+      }
+      if (!pickerEnabled.has(connection.player) || pawn.health <= 0) continue
+      const index = pawn.team - 2
+      if (!connection.player.abilities().some(a => a.name === 'citadel_ability_hook')) continue
+      if (!seats[index] && ['waiting', 'error', 'finished'].includes(rounds.phase)) {
+        occupySide(connection.player, index)
+        continue
+      }
+      connection.player.chat('Эта сторона занята. Выбери свободную сторону.')
+      lobbyRetry.set(connection.player, 0)
+    } else if (retry !== undefined && timeSeconds < retry) continue
+    pickerEnabled.delete(connection.player)
     const entered = connection.player.spectate()
     lobbyRetry.set(connection.player, entered ? Infinity : timeSeconds + 1)
-    if (entered) connection.player.chat('Ты наблюдатель. /hookjoin 1 или /hookjoin 2, затем /ready. Все команды: /help')
+    if (entered) connection.player.chat('Ты наблюдатель. Консоль: changeteam 0. Выбери сторону и Bebop, затем /ready в чате.')
   }
   for (const player of seats) {
     if (!player) continue
