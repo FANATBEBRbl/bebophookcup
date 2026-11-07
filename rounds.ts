@@ -82,7 +82,7 @@ export class Rounds {
 
   reset(): void {
     this.readyPlayers.clear()
-    for (const player of this.members) { player.freeze(false); player.blockInput(0n) }
+    for (const player of this.members) player.blockInput(0n)
     this.members = []
     this.spawns = []
     this.phase = 'waiting'
@@ -95,7 +95,6 @@ export class Rounds {
     this.result = won ? `P${side} WINS THE MATCH` : `P${side} WINS ROUND ${this.number}`
     this.phase = won ? 'finished' : 'break'
     this.deadline = now + 2
-    for (const player of this.members) player.freeze(!won)
   }
 
   private prepare(now: number): void {
@@ -104,7 +103,6 @@ export class Rounds {
     if (!this.choosePair()) {
       this.phase = 'error'
       this.result = 'Need 4 /spawnadd points and a covered pair 800+ units apart; then /resetarena'
-      for (const player of this.members) player.freeze(false)
       return
     }
     this.phase = 'prepare'
@@ -136,7 +134,6 @@ export class Rounds {
       if (now > this.deadline) {
         this.phase = 'error'
         this.result = 'Preparation failed — /resetarena'
-        for (const player of this.members) player.freeze(false)
         return
       }
       if (now < this.nextTry) return
@@ -146,26 +143,25 @@ export class Rounds {
         const player = this.members[i]
         const pawn = player.pawn()
         if (!pawn) continue
-        if (pawn.health <= 0) { player.freeze(false); player.respawn(); continue }
+        if (pawn.health <= 0) { player.respawn(); continue }
         const spot = this.spawns[i]
-        if (!player.freeze(true)) continue
         if (!player.teleport(spot.position, spot.facing, { x: 0, y: 0, z: 0 })) continue
-        if (!player.refreshAbility('citadel_ability_hook')) continue
         this.placed[i] = true
       }
       if (this.placed.every(Boolean)) {
+        for (const player of this.members) {
+          if (!player.refreshAbility('upgrade_warp_stone') ||
+              !player.setAbility({ ability: 'citadel_ability_hook', cooldownEnd: now + 3 })) {
+            // An item can arrive a frame after the pawn respawns.
+            return
+          }
+        }
         this.phase = 'countdown'
         this.deadline = now + 3
       }
     }
     if (this.phase === 'countdown' && now >= this.deadline) {
-      const released = this.members.map((p) => p.freeze(false))
-      if (released.every(Boolean)) this.phase = 'live'
-      else {
-        this.phase = 'error'
-        this.result = 'Could not release players — /resetarena'
-        for (const player of this.members) player.freeze(false)
-      }
+      this.phase = 'live'
     }
   }
 
@@ -208,8 +204,8 @@ export class Rounds {
       }
       if (this.phase === 'break' || this.phase === 'finished' || this.phase === 'error' || this.phase === 'waiting') {
         const title = this.phase === 'waiting' ? 'READY CHECK' : this.phase === 'error' ? 'ARENA SETUP' : this.result
-        const detail = this.phase === 'finished' ? '/resetarena for a rematch'
-          : this.phase === 'break' ? `Next: round ${this.number + 1}` : line + (this.phase === 'waiting' ? '\n!ready / !unready' : '')
+        const detail = this.phase === 'finished' ? 'Next duel: /hookjoin 1 or /hookjoin 2'
+          : this.phase === 'break' ? `Next: round ${this.number + 1}` : line + (this.phase === 'waiting' ? '\n/hookjoin 1 or 2, then /ready | /help' : '')
         ui.push(jsx('panel', {
           children: [jsx('label', { children: title, style: { width: '100%', fontSize: 24, face: 'body', bold: true, color: '#f5c775', textOverflow: 'shrink' } }),
             jsx('label', { children: detail, style: { width: '100%', fontSize: 18, face: 'body', color: '#eee8db', margin: [10, 0, 0, 0] } })],

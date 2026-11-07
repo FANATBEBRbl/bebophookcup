@@ -1,4 +1,4 @@
-import { command, onChat, onWorld, onFrame, onPlayerJoin, onPlayerLeave, players, readField, killEntity, addBot, findHero, type Player } from 'modlock'
+import { command, onWorld, onFrame, onPlayerJoin, onPlayerLeave, players, readField, killEntity, addBot, findHero, type Player } from 'modlock'
 import { set as setServerVariable } from 'modlock/console'
 import { Rounds } from './rounds'
 import { restrictCombat } from './combat'
@@ -11,6 +11,7 @@ let scores = [0, 0]
 let winner = 0
 const seats: (Player | undefined)[] = [undefined, undefined]
 const warpStoneGrants = new Map<Player, { entity: number; retryAt: number }>()
+const lobbyRetry = new Map<Player, number>()
 const caught: (number | undefined)[] = [undefined, undefined]
 let practiceBot: Player | undefined
 let pending: { side: number; victim: Player; entity: number; until: number } | undefined
@@ -44,6 +45,8 @@ onWorld(() => {
   rounds.startMapHud()
   seats.fill(undefined)
   warpStoneGrants.clear()
+  lobbyRetry.clear()
+  setServerVariable('citadel_server_max_spectator_slots', 8)
   caught.fill(undefined)
   practiceBot = undefined
 })
@@ -62,12 +65,22 @@ command('hookjoin', (player, args) => {
     return
   }
   if (seats[index] === player) { player.chat(`[Hook Arena] You are P${index + 1}`); return }
+  if (!['waiting', 'finished', 'error'].includes(rounds.phase)) {
+    player.chat('Дождись конца матча или используй /hookleave.')
+    return
+  }
+  const hero = findHero('Bebop')
+  if (!hero || player.selectHero(hero.name, index + 2) === undefined) {
+    player.chat('Не удалось выбрать Bebop. Повтори /hookjoin через секунду.')
+    return
+  }
+  lobbyRetry.delete(player)
   const previous = seats.indexOf(player)
   if (previous >= 0) seats[previous] = undefined
   seats[index] = player
   reset()
   caught.fill(undefined)
-  announce(`[Hook Arena] Player slot ${player.slot} joined P${index + 1}. Score reset. Both sides must join; use Bebop on opposing teams.`)
+  announce(`[Hook Arena] Player slot ${player.slot} joined P${index + 1}. Type /ready when Bebop appears.`)
 })
 
 function leave(player: Player): void {
@@ -80,9 +93,13 @@ function leave(player: Player): void {
   caught.fill(undefined)
   announce('[Hook Arena] Participant left. Hooks paused; score reset.')
 }
-command('hookleave', (player) => leave(player))
+command('hookleave', (player) => {
+  leave(player)
+  lobbyRetry.set(player, 0)
+})
 onPlayerJoin((event) => rounds.forgetHud(event.connection.player))
 onPlayerLeave((event) => {
+  lobbyRetry.delete(event.connection.player)
   rounds.forgetHud(event.connection.player)
   leave(event.connection.player)
 })
@@ -114,7 +131,7 @@ command('hookbot', (player) => {
   seats[1] = bot
   reset()
   caught.fill(undefined)
-  announce('[Hook Arena] You are P1; bot is ready as P2. Type !ready to start.')
+  announce('[Hook Arena] You are P1; bot is ready as P2. Type /ready to start.')
 })
 
 command('removehookbot', (player) => {
@@ -127,9 +144,16 @@ command('removehookbot', (player) => {
 })
 
 onFrame(({ timeSeconds }) => {
+  for (const connection of players()) {
+    if (!connection.ready || connection.bot || seats.includes(connection.player)) continue
+    const retry = lobbyRetry.get(connection.player)
+    if (retry === Infinity || (retry !== undefined && timeSeconds < retry)) continue
+    const entered = connection.player.spectate()
+    lobbyRetry.set(connection.player, entered ? Infinity : timeSeconds + 1)
+    if (entered) connection.player.chat('Ты наблюдатель. /hookjoin 1 или /hookjoin 2, затем /ready. Все команды: /help')
+  }
   for (const player of seats) {
     if (!player) continue
-    restrictCombat(player, timeSeconds)
     const pawn = player.pawn()
     if (!pawn || pawn.health <= 0) {
       warpStoneGrants.delete(player)
@@ -141,6 +165,9 @@ onFrame(({ timeSeconds }) => {
     warpStoneGrants.set(player, { entity: pawn.entity, retryAt: granted ? Infinity : timeSeconds + 1 })
   }
   rounds.update(seats, timeSeconds)
+  for (const player of seats) {
+    if (player) restrictCombat(player, timeSeconds, rounds.phase !== 'live')
+  }
   rounds.draw(players(), seats, scores, timeSeconds)
   if (rounds.phase !== 'live') {
     for (let i = 0; i < 2; i++) {
@@ -156,6 +183,17 @@ onFrame(({ timeSeconds }) => {
       point(pending.side)
       rounds.end(pending.side, winner !== 0, timeSeconds)
       announce(`[HOOK +1 P${pending.side}] ${scoreText()}`)
+      if (winner) {
+        for (const player of seats) {
+          if (!player) continue
+          player.blockInput(0n)
+          warpStoneGrants.delete(player)
+          if (player === practiceBot) { player.removeBot(); practiceBot = undefined }
+          else lobbyRetry.set(player, 0)
+        }
+        seats.fill(undefined)
+        announce('Матч окончен. Для следующей дуэли: /hookjoin 1 или /hookjoin 2.')
+      }
       pending = undefined
     } else if (timeSeconds >= pending.until || (pawn && pawn.entity !== pending.entity)) {
       announce('[Hook Arena] Death not confirmed; no point awarded.')
@@ -219,11 +257,15 @@ function ready(player: Player, value: boolean): void {
 }
 command('ready', (player) => ready(player, true))
 command('unready', (player) => ready(player, false))
-// Modlock's command prefix parser does not promise support for !.
-onChat(({ player, text }) => {
-  const message = text.trim().toLowerCase()
-  if (message === '!ready') ready(player, true)
-  else if (message === '!unready') ready(player, false)
+command('help', (player) => {
+  for (const line of [
+    '/hookjoin 1 или /hookjoin 2 — занять сторону за Bebop; /hookleave — наблюдать.',
+    '/ready — готов; /unready — отменить готовность.',
+    '/hookscore — счёт; /hookhud — обновить HUD; /help — команды.',
+    '/hookbot — тренировка; /removehookbot — убрать бота.',
+    '/spawnadd — записать позицию; /spawnclear — очистить точки.',
+    '/resetarena — сброс матча; /testpoint [1|2] — тест очка; /hello — тест связи.',
+  ]) player.chat(line)
 })
 
 command('testpoint', (player, args) => {
@@ -244,7 +286,8 @@ command('testpoint', (player, args) => {
   announce(`[TEST +1 P${side}] ${scoreText()}`)
 })
 
-command('resetarena', () => {
+command('resetarena', (player) => {
+  if (seats.some(Boolean) && !seats.includes(player)) { player.chat('Сброс доступен участникам дуэли.'); return }
   reset()
   announce(scoreText())
 })
