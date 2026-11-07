@@ -1,4 +1,4 @@
-import { command, onChat, onWorld, onFrame, onPlayerLeave, players, readField, killEntity, addBot, findHero, type Player } from 'modlock'
+import { command, onChat, onWorld, onFrame, onPlayerJoin, onPlayerLeave, players, readField, killEntity, addBot, findHero, type Player } from 'modlock'
 import { set as setServerVariable } from 'modlock/console'
 import { Rounds } from './rounds'
 import { restrictCombat } from './combat'
@@ -81,7 +81,11 @@ function leave(player: Player): void {
   announce('[Hook Arena] Participant left. Hooks paused; score reset.')
 }
 command('hookleave', (player) => leave(player))
-onPlayerLeave((event) => leave(event.connection.player))
+onPlayerJoin((event) => rounds.forgetHud(event.connection.player))
+onPlayerLeave((event) => {
+  rounds.forgetHud(event.connection.player)
+  leave(event.connection.player)
+})
 
 command('hookbot', (player) => {
   const pawn = player.pawn()
@@ -192,6 +196,11 @@ onFrame(({ timeSeconds }) => {
 // Greet each player who types /hello in chat.
 command('hello', (player) => {
   player.chat('Hello from Bebop Cup!')
+})
+
+command('hookhud', (player) => {
+  rounds.forgetHud(player)
+  player.chat('[Hook Arena] Full HUD refresh requested.')
 })
 
 command('hookscore', (player) => {
