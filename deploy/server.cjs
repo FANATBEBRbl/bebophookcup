@@ -1,5 +1,6 @@
 // Launch on the VPS from a clone with read access to origin/dev.
 const fs = require('node:fs')
+const net = require('node:net')
 const path = require('node:path')
 const { spawn, spawnSync } = require('node:child_process')
 const { setTimeout: delay } = require('node:timers/promises')
@@ -71,7 +72,10 @@ async function main() {
   let rejected = ''
   while (!closing) {
     try {
-      if (active && (!running || running.exitCode !== null)) { stop(); await launch(active) }
+      if (active && (!running || running.exitCode !== null)) {
+        stop()
+        try { await launch(active) } catch (err) { stop(); throw err }
+      }
       run('git', ['fetch', 'origin', '+refs/heads/dev:refs/remotes/origin/dev'])
       const id = run('git', ['rev-parse', 'refs/remotes/origin/dev'])
       if (id !== active && id !== rejected) {
@@ -97,4 +101,8 @@ async function main() {
   }
 }
 process.once('SIGINT', () => { closing = true; stop(); process.exit(0) })
-main().catch(err => { console.error(err.message); stop(); process.exitCode = 1 })
+const lock = net.createServer(socket => socket.end())
+lock.once('error', err => { console.error('Cannot start updater:', err.message); process.exitCode = 1 })
+lock.listen('\\\\.\\pipe\\bebop-cup-updater', () => {
+  main().catch(err => { console.error(err.message); stop(); lock.close(); process.exitCode = 1 })
+})
