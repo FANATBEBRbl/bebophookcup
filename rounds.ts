@@ -262,11 +262,11 @@ export class Rounds {
       }
       if (choosing) {
         ui.push(jsx('panel', {
-          style: { horizontalAlign: 'center', verticalAlign: 'center', flow: 'down',
+          style: { horizontalAlign: 'left', verticalAlign: 'bottom', flow: 'down', margin: [0, 0, 32, 28],
             width: 280, padding: 16, background: '#101820ee', borderRadius: 12 },
           children: [jsx('label', { children: 'Войти в дуэль', style: { color: '#f5c775', fontSize: 22 } }),
             ...[0, 1].map(i => Action({ disabled: !!seats[i], children: seats[i] ? `P${i + 1} · занято` : `Играть за P${i + 1}`,
-              onPress: actor => { if (actor === viewer.player && !seats.includes(actor)) joinSide(actor, String(i + 1)) } }))],
+              onPress: actor => { if (!seats[i] && actor === viewer.player && !seats.includes(actor)) joinSide(actor, String(i + 1)) } }))],
         }))
       }
       const hidden = hideHud(viewer.player, ['topBar', 'ownHealth', 'minimap', 'ammo'])

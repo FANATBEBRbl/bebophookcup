@@ -56,6 +56,12 @@ buttons[0].onPress(b)
 assert.equal(selected.length,0)
 buttons[0].onPress(a)
 assert.deepEqual(selected,[[a,'1']])
-picker.draw(viewers,[a,b],[0,0],1,choose)
+buttons[1].onPress(a)
+assert.equal(selected.length,1)
+const spectator = player(1,0)
+let lastTree
+context.show = (_, tree) => { lastTree = tree; return true }
+picker.draw(viewers,[spectator,b],[0,0],1,choose)
+assert.equal(lastTree.some(node => node?.props?.children?.some?.(c => c?.props?.children === 'Войти в дуэль')),false)
 assert.deepEqual(cursors,[true,false])
 console.log('PASS: spectator HUD selection and cursor release')
