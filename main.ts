@@ -58,6 +58,7 @@ function point(side: number): void {
 }
 
 command('hookjoin', (player, args) => {
+  console.log('[Hook Arena] hookjoin received, slot', player.slot, 'side', args.slice(0, 8))
   const index = args === '1' ? 0 : args === '2' ? 1 : -1
   if (index < 0) { player.chat('Usage: /hookjoin 1 or /hookjoin 2'); return }
   if (seats[index] && seats[index] !== player) {
@@ -71,6 +72,7 @@ command('hookjoin', (player, args) => {
   }
   const hero = findHero('Bebop')
   if (!hero || player.selectHero(hero.name, index + 2) === undefined) {
+    console.log('[Hook Arena] selecting Bebop failed, slot', player.slot, 'team', index + 2)
     player.chat('Не удалось выбрать Bebop. Повтори /hookjoin через секунду.')
     return
   }

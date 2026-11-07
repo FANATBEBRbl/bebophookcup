@@ -246,7 +246,7 @@ export class Rounds {
       if (this.phase === 'break' || this.phase === 'finished' || this.phase === 'error' || this.phase === 'waiting') {
         const title = this.phase === 'waiting' ? 'READY CHECK' : this.phase === 'error' ? 'ARENA SETUP' : this.result
         const detail = this.phase === 'finished' ? 'Next duel: /hookjoin 1 or /hookjoin 2'
-          : this.phase === 'break' ? `Next: round ${this.number + 1}` : line + (this.phase === 'waiting' ? '\n/hookjoin 1 or 2, then /ready | /help' : '')
+          : this.phase === 'break' ? `Next: round ${this.number + 1}` : line + (this.phase === 'waiting' ? '\nChat: /hookjoin 1 or /hookjoin 2\nConsole: cmd hookjoin 1 or cmd hookjoin 2' : '')
         ui.push(jsx('panel', {
           children: [jsx('label', { children: title, style: { width: '100%', fontSize: 24, face: 'body', bold: true, color: '#f5c775', textOverflow: 'shrink' } }),
             jsx('label', { children: detail, style: { width: '100%', fontSize: 18, face: 'body', color: '#eee8db', margin: [10, 0, 0, 0] } })],
