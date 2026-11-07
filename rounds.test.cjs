@@ -44,3 +44,18 @@ fresh.loadSpawns()
 assert.match(fresh.addSpawn(a),/Spawn 1 saved/)
 assert.deepEqual(JSON.parse(stored)[0],{position:a.state.position,facing:a.state.eyeAngles})
 console.log('PASS: spawn persistence, failed writes, damaged file and explicit clear')
+const picker = vm.runInContext('new Rounds()',context)
+let buttons = [], cursors = [], selected = []
+context.Action = props => { buttons.push(props); return props }
+context.freeCursor = (_,free) => { cursors.push(free); return true }
+const choose = (player, side) => selected.push([player,side])
+picker.draw(viewers,[undefined,b],[0,0],0,choose)
+assert.equal(buttons.length,2)
+assert.equal(buttons[1].disabled,true)
+buttons[0].onPress(b)
+assert.equal(selected.length,0)
+buttons[0].onPress(a)
+assert.deepEqual(selected,[[a,'1']])
+picker.draw(viewers,[a,b],[0,0],1,choose)
+assert.deepEqual(cursors,[true,false])
+console.log('PASS: spectator HUD selection and cursor release')

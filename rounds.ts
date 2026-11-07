@@ -1,4 +1,4 @@
-import { readFile, writeFile, hide, createEntity, fireInput, show, hideHud, trace, Layers, TopStrip, Score, jsx, type Player, type Vector, type Angles } from 'modlock'
+import { Action, freeCursor, readFile, writeFile, hide, createEntity, fireInput, show, hideHud, trace, Layers, TopStrip, Score, jsx, type Player, type Vector, type Angles } from 'modlock'
 import { countdown } from './countdown'
 
 type Spawn = { position: Vector; facing: Angles }
@@ -22,6 +22,7 @@ export class Rounds {
   private pool: Spawn[] = []
   private previousPair = ''
   private members: Player[] = []
+  private lobbyCursor = new Set<Player>()
   private lastHud = new Map<Player, string>()
   private hudText: number | undefined
   private displayedText = ''
@@ -207,10 +208,11 @@ export class Rounds {
   }
 
   forgetHud(player: Player): void {
+    this.lobbyCursor.delete(player)
     this.lastHud.delete(player)
   }
 
-  draw(viewers: { player: Player; name: string; bot: boolean; ready: boolean }[], seats: (Player | undefined)[], scores: number[], now: number): void {
+  draw(viewers: { player: Player; name: string; bot: boolean; ready: boolean }[], seats: (Player | undefined)[], scores: number[], now: number, joinSide: (player: Player, side: string) => void): void {
     const names = seats.map((p, i) => viewers.find((v) => v.player === p)?.name || `P${i + 1}: waiting`)
     const line = this.phase === 'waiting' ? seats.map((p, i) => `${names[i]}: ${!p ? 'EMPTY' : this.isReady(p) ? 'READY' : 'NOT READY'}`).join('\n')
       : this.phase === 'prepare' ? 'Preparing arena'
@@ -233,7 +235,10 @@ export class Rounds {
         this.forgetHud(viewer.player)
         continue
       }
-      if (this.lastHud.get(viewer.player) === key) continue
+      const choosing = !seats.includes(viewer.player) && seats.some(seat => !seat)
+        && ['waiting', 'finished', 'error'].includes(this.phase)
+      const viewerKey = key + ':' + choosing + ':' + seats.map(p => p?.slot ?? '-').join(',')
+      if (this.lastHud.get(viewer.player) === viewerKey) continue
       const firstDraw = !this.lastHud.has(viewer.player)
       if (firstDraw) hide(viewer.player) // Clear the SDK's slot cache before the first full redraw.
       const ui = [TopStrip({ heading: `HOOK ARENA | ROUND ${this.number} | FIRST TO 10`,
@@ -246,7 +251,7 @@ export class Rounds {
       if (this.phase === 'break' || this.phase === 'finished' || this.phase === 'error' || this.phase === 'waiting') {
         const title = this.phase === 'waiting' ? 'READY CHECK' : this.phase === 'error' ? 'ARENA SETUP' : this.result
         const detail = this.phase === 'finished' ? 'Next duel: /hookjoin 1 or /hookjoin 2'
-          : this.phase === 'break' ? `Next: round ${this.number + 1}` : line + (this.phase === 'waiting' ? '\nChat: /hookjoin 1 or /hookjoin 2\nConsole: changeteam 0 → pick team + Bebop' : '')
+          : this.phase === 'break' ? `Next: round ${this.number + 1}` : line + (this.phase === 'waiting' ? '\nУчастники: /ready' : '')
         ui.push(jsx('panel', {
           children: [jsx('label', { children: title, style: { width: '100%', fontSize: 24, face: 'body', bold: true, color: '#f5c775', textOverflow: 'shrink' } }),
             jsx('label', { children: detail, style: { width: '100%', fontSize: 18, face: 'body', color: '#eee8db', margin: [10, 0, 0, 0] } })],
@@ -255,9 +260,23 @@ export class Rounds {
             borderRadius: 12 },
         }))
       }
+      if (choosing) {
+        ui.push(jsx('panel', {
+          style: { horizontalAlign: 'center', verticalAlign: 'center', flow: 'down',
+            width: 280, padding: 16, background: '#101820ee', borderRadius: 12 },
+          children: [jsx('label', { children: 'Войти в дуэль', style: { color: '#f5c775', fontSize: 22 } }),
+            ...[0, 1].map(i => Action({ disabled: !!seats[i], children: seats[i] ? `P${i + 1} · занято` : `Играть за P${i + 1}`,
+              onPress: actor => { if (actor === viewer.player && !seats.includes(actor)) joinSide(actor, String(i + 1)) } }))],
+        }))
+      }
       const hidden = hideHud(viewer.player, ['topBar', 'ownHealth', 'minimap', 'ammo'])
       if (show(viewer.player, ui) && hidden) {
-        this.lastHud.set(viewer.player, key)
+        if (choosing !== this.lobbyCursor.has(viewer.player)) {
+          if (!freeCursor(viewer.player, choosing)) continue
+          if (choosing) this.lobbyCursor.add(viewer.player)
+          else this.lobbyCursor.delete(viewer.player)
+        }
+        this.lastHud.set(viewer.player, viewerKey)
         if (firstDraw) console.log('[Hook Arena] Full HUD accepted for slot', viewer.player.slot)
       }
     }

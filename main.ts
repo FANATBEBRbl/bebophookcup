@@ -59,7 +59,7 @@ function point(side: number): void {
   if (scores[side - 1] >= target) winner = side
 }
 
-command('hookjoin', (player, args) => {
+function joinSide(player: Player, args: string): void {
   console.log('[Hook Arena] hookjoin received, slot', player.slot, 'side', args.slice(0, 8))
   const index = args === '1' ? 0 : args === '2' ? 1 : -1
   if (index < 0) { player.chat('Usage: /hookjoin 1 or /hookjoin 2'); return }
@@ -79,7 +79,8 @@ command('hookjoin', (player, args) => {
     return
   }
   occupySide(player, index)
-})
+}
+command('hookjoin', joinSide)
 
 function occupySide(player: Player, index: number): void {
   lobbyRetry.delete(player)
@@ -175,7 +176,7 @@ onFrame(({ timeSeconds }) => {
     pickerEnabled.delete(connection.player)
     const entered = connection.player.spectate()
     lobbyRetry.set(connection.player, entered ? Infinity : timeSeconds + 1)
-    if (entered) connection.player.chat('Ты наблюдатель. Консоль: changeteam 0. Выбери сторону и Bebop, затем /ready в чате.')
+    if (entered) connection.player.chat('Ты наблюдатель. Нажми P1 или P2 на панели арены. Затем напиши /ready.')
   }
   for (const player of seats) {
     if (!player) continue
@@ -193,7 +194,7 @@ onFrame(({ timeSeconds }) => {
   for (const player of seats) {
     if (player) restrictCombat(player, timeSeconds, rounds.phase !== 'live')
   }
-  rounds.draw(players(), seats, scores, timeSeconds)
+  rounds.draw(players(), seats, scores, timeSeconds, joinSide)
   if (rounds.phase !== 'live') {
     for (let i = 0; i < 2; i++) {
       const ability = seats[i]?.abilities().find((a) => a.name === 'citadel_ability_hook')
