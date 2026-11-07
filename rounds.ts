@@ -212,7 +212,7 @@ export class Rounds {
     this.lastHud.delete(player)
   }
 
-  draw(viewers: { player: Player; name: string; bot: boolean; ready: boolean }[], seats: (Player | undefined)[], scores: number[], now: number, joinSide: (player: Player, side: string) => void): void {
+  draw(viewers: { player: Player; name: string; bot: boolean; ready: boolean }[], seats: (Player | undefined)[], scores: number[], now: number, joinSide: (player: Player, side: string) => void, ready: (player: Player, value: boolean) => void, leave: (player: Player) => void): void {
     const names = seats.map((p, i) => viewers.find((v) => v.player === p)?.name || `P${i + 1}: waiting`)
     const line = this.phase === 'waiting' ? seats.map((p, i) => `${names[i]}: ${!p ? 'EMPTY' : this.isReady(p) ? 'READY' : 'NOT READY'}`).join('\n')
       : this.phase === 'prepare' ? 'Preparing arena'
@@ -237,6 +237,9 @@ export class Rounds {
       }
       const choosing = !seats.includes(viewer.player) && seats.some(seat => !seat)
         && ['waiting', 'finished', 'error'].includes(this.phase)
+      const participant = seats.includes(viewer.player) && this.phase !== 'finished'
+      const waiting = participant && this.phase === 'waiting'
+      const useCursor = choosing || waiting || (participant && this.phase === 'error')
       const viewerKey = key + ':' + choosing + ':' + seats.map(p => p?.slot ?? '-').join(',')
       if (this.lastHud.get(viewer.player) === viewerKey) continue
       const firstDraw = !this.lastHud.has(viewer.player)
@@ -260,20 +263,30 @@ export class Rounds {
             borderRadius: 12 },
         }))
       }
-      if (choosing) {
+      if (choosing || participant) {
+        const isReady = this.isReady(viewer.player)
+        const actions = choosing ? [0, 1].map(i => Action({
+          disabled: !!seats[i], children: seats[i] ? `P${i + 1} · занято` : `Играть за P${i + 1}`,
+          onPress: actor => { if (!seats[i] && actor === viewer.player && !seats.includes(actor)) joinSide(actor, String(i + 1)) },
+        })) : [
+          ...(waiting ? [Action({ kind: 'primary', children: isReady ? 'Отменить готовность' : 'Готов',
+            onPress: actor => { if (actor === viewer.player && this.phase === 'waiting' && seats.includes(actor)) ready(actor, !isReady) },
+          })] : []),
+          Action({ kind: 'quiet', children: 'Выйти в наблюдатели',
+            onPress: actor => { if (actor === viewer.player && seats.includes(actor)) leave(actor) },
+          }),
+        ]
         ui.push(jsx('panel', {
           style: { horizontalAlign: 'left', verticalAlign: 'bottom', flow: 'down', margin: [0, 0, 32, 28],
             width: 280, padding: 16, background: '#101820ee', borderRadius: 12 },
-          children: [jsx('label', { children: 'Войти в дуэль', style: { color: '#f5c775', fontSize: 22 } }),
-            ...[0, 1].map(i => Action({ disabled: !!seats[i], children: seats[i] ? `P${i + 1} · занято` : `Играть за P${i + 1}`,
-              onPress: actor => { if (!seats[i] && actor === viewer.player && !seats.includes(actor)) joinSide(actor, String(i + 1)) } }))],
+          children: [jsx('label', { children: choosing ? 'Войти в дуэль' : 'Дуэль', style: { color: '#f5c775', fontSize: 22 } }), ...actions],
         }))
       }
       const hidden = hideHud(viewer.player, ['topBar', 'ownHealth', 'minimap', 'ammo'])
       if (show(viewer.player, ui) && hidden) {
-        if (choosing !== this.lobbyCursor.has(viewer.player)) {
-          if (!freeCursor(viewer.player, choosing)) continue
-          if (choosing) this.lobbyCursor.add(viewer.player)
+        if (useCursor !== this.lobbyCursor.has(viewer.player)) {
+          if (!freeCursor(viewer.player, useCursor)) continue
+          if (useCursor) this.lobbyCursor.add(viewer.player)
           else this.lobbyCursor.delete(viewer.player)
         }
         this.lastHud.set(viewer.player, viewerKey)

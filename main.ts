@@ -89,7 +89,7 @@ function occupySide(player: Player, index: number): void {
   seats[index] = player
   reset()
   caught.fill(undefined)
-  announce(`[Hook Arena] Player slot ${player.slot} joined P${index + 1}. Type /ready when Bebop appears.`)
+  announce(`[Hook Arena] Player slot ${player.slot} joined P${index + 1}. Нажми «Готов», когда появится Bebop.`)
 }
 
 function leave(player: Player): void {
@@ -102,10 +102,11 @@ function leave(player: Player): void {
   caught.fill(undefined)
   announce('[Hook Arena] Participant left. Hooks paused; score reset.')
 }
-command('hookleave', (player) => {
+function leaveToSpectators(player: Player): void {
   leave(player)
   lobbyRetry.set(player, 0)
-})
+}
+command('hookleave', leaveToSpectators)
 onPlayerJoin((event) => rounds.forgetHud(event.connection.player))
 onPlayerLeave((event) => {
   pickerEnabled.delete(event.connection.player)
@@ -194,7 +195,7 @@ onFrame(({ timeSeconds }) => {
   for (const player of seats) {
     if (player) restrictCombat(player, timeSeconds, rounds.phase !== 'live')
   }
-  rounds.draw(players(), seats, scores, timeSeconds, joinSide)
+  rounds.draw(players(), seats, scores, timeSeconds, joinSide, ready, leaveToSpectators)
   if (rounds.phase !== 'live') {
     for (let i = 0; i < 2; i++) {
       const ability = seats[i]?.abilities().find((a) => a.name === 'citadel_ability_hook')
