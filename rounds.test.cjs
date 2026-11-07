@@ -83,3 +83,21 @@ for (const phase of ['prepare','countdown','live','break']) {
   assert.equal(buttons.length,0,phase)
   assert.equal(cursors.at(-1),false)
 }
+
+cover = true
+const delayed = vm.runInContext('new Rounds()',context)
+delayed.loadSpawns()
+const late = player(2,0), absent = player(3,0)
+for(const x of [0,1000,2000,3000]) { late.state.position.x=x; delayed.addSpawn(late) }
+let stoneVisible=false, refreshed=0
+late.abilities=()=>[{name:'citadel_ability_hook'},...(stoneVisible?[{name:'upgrade_warp_stone'}]:[])]
+late.refreshAbility=()=>{assert.ok(stoneVisible);refreshed++;return true}
+absent.refreshAbility=()=>assert.fail('cannot refresh an absent item')
+delayed.setReady(late,true); delayed.setReady(absent,true)
+delayed.update([late,absent],10)
+assert.equal(delayed.phase,'countdown')
+stoneVisible=true
+for(const t of [10.5,11,12,13]) delayed.update([late,absent],t)
+assert.equal(refreshed,1)
+assert.equal(delayed.phase,'live')
+console.log('PASS: late Warp Stone refreshed once, missing Warp Stone never blocks round')

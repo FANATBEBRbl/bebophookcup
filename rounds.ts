@@ -17,6 +17,8 @@ export class Rounds {
   number = 1
   private deadline = 0
   private nextTry = 0
+  private pendingStoneRefresh = new Set<Player>()
+  private nextStoneCheck = 0
   private placed = [false, false]
   private spawns: Spawn[] = []
   private pool: Spawn[] = []
@@ -192,14 +194,19 @@ export class Rounds {
       }
       if (this.placed.every(Boolean)) {
         for (const player of this.members) {
-          if (!player.refreshAbility('upgrade_warp_stone') ||
-              !player.setAbility({ ability: 'citadel_ability_hook', cooldownEnd: now + 3 })) {
-            // An item can arrive a frame after the pawn respawns.
-            return
-          }
+          if (!player.setAbility({ ability: 'citadel_ability_hook', cooldownEnd: now + 3 })) return
         }
+        this.pendingStoneRefresh = new Set(this.members)
+        this.nextStoneCheck = now
         this.phase = 'countdown'
         this.deadline = now + 3
+      }
+    }
+    if (this.phase === 'countdown' && now >= this.nextStoneCheck) {
+      this.nextStoneCheck = now + 0.25
+      for (const player of this.pendingStoneRefresh) {
+        const stone = player.abilities().find(a => a.name === 'upgrade_warp_stone')
+        if (stone && player.refreshAbility(stone.name)) this.pendingStoneRefresh.delete(player)
       }
     }
     if (this.phase === 'countdown' && now >= this.deadline) {

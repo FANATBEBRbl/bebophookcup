@@ -188,8 +188,8 @@ onFrame(({ timeSeconds }) => {
     }
     const grant = warpStoneGrants.get(player)
     if (grant?.entity === pawn.entity && timeSeconds < grant.retryAt) continue
-    const granted = player.giveItem('upgrade_warp_stone')
-    warpStoneGrants.set(player, { entity: pawn.entity, retryAt: granted ? Infinity : timeSeconds + 1 })
+    if (!player.abilities().some(a => a.name === 'upgrade_warp_stone')) player.giveItem('upgrade_warp_stone')
+    warpStoneGrants.set(player, { entity: pawn.entity, retryAt: timeSeconds + 1 })
   }
   rounds.update(seats, timeSeconds)
   for (const player of seats) {
