@@ -6,11 +6,13 @@ const commands = new Map()
 let frame, join, leave, victim, hookVictim
 const viewers = Array.from({ length: 8 }, (_, slot) => {
   const player = {
-    slot, team: 0, spectators: 0, messages: [],
+    slot, team: 0, spectators: 0, cameraCalls: 0, position: {x:0,y:0,z:0}, messages: [],
     spectate() { this.team = 1; this.spectators++; return true },
+    freeCamera() { return ++this.cameraCalls > 1 },
+    teleport(position) { this.position = position; return true },
     selectHero(hero, team) { this.team = team; return 7 },
     chat(message) { this.messages.push(message) },
-    pawn() { return this.team > 1 ? {entity: slot + 20, health: this === victim ? 0 : 100, team: this.team} : undefined },
+    pawn() { return this.team > 1 ? {entity: slot + 20, position: this.position, health: this === victim ? 0 : 100, team: this.team} : undefined },
     abilities() { return [{name: 'citadel_ability_hook', entity: 100 + slot}] },
     giveItem() { return true }, blockInput() { return true },
   }
@@ -38,6 +40,9 @@ tick(0); tick(1)
 assert.ok(viewers.every(v => v.player.team === 1 && v.player.spectators === 1))
 chat(0,'hookjoin','1'); chat(1,'hookjoin','2'); chat(2,'hookjoin','1')
 assert.deepEqual(viewers.map(v => v.player.team), [2,3,1,1,1,1,1,1])
+tick(1.5); tick(1.6)
+assert.equal(viewers[1].player.position.x,896)
+assert.equal(viewers[2].player.cameraCalls,2)
 chat(2,'help')
 const help = viewers[2].player.messages.join(' ')
 for (const cmd of commands.keys()) assert.ok(help.includes('/' + cmd), cmd)

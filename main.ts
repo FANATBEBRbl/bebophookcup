@@ -1,4 +1,4 @@
-import { command, onWorld, onFrame, onPlayerJoin, onPlayerLeave, players, readField, killEntity, addBot, findHero, type Player } from 'modlock'
+import { command, onWorld, onFrame, onPlayerJoin, onPlayerLeave, players, findEntities, entityPosition, fireInput, readField, killEntity, addBot, findHero, type Player } from 'modlock'
 import { set as setServerVariable } from 'modlock/console'
 import { Rounds } from './rounds'
 import { restrictCombat } from './combat'
@@ -11,6 +11,10 @@ let scores = [0, 0]
 let winner = 0
 const seats: (Player | undefined)[] = [undefined, undefined]
 const warpStoneGrants = new Map<Player, { entity: number; retryAt: number }>()
+// Positions of the two info_team_spawn markers in bebop_arena_small.
+const eastSpawn = { x: 896, y: -864, z: 100 }
+const spectatorView = { position: { x: 400, y: -1400, z: 340 }, facing: { pitch: 24, yaw: 90, roll: 0 } }
+const cameraRetry = new Map<Player, number>()
 const pickerEnabled = new Set<Player>()
 const lobbyRetry = new Map<Player, number>()
 const caught: (number | undefined)[] = [undefined, undefined]
@@ -42,6 +46,13 @@ onWorld(() => {
   console.log('[Hook Arena] sv_cheats=1 request accepted:', setServerVariable('sv_cheats', true))
   console.log('[Hook Arena] Allow duplicate heroes:', setServerVariable('citadel_allow_duplicate_heroes', true))
   reset()
+  cameraRetry.clear()
+  for (const entity of findEntities('info_team_spawn')) {
+    const p = entityPosition(entity)?.position
+    if (p && Math.hypot(p.x - eastSpawn.x, p.y - eastSpawn.y, p.z - eastSpawn.z) < 1) {
+      console.log('[Hook Arena] Assign east spawn to team 3:', fireInput(entity, 'SetTeam', { integer: 3 }))
+    }
+  }
   rounds.loadSpawns()
   rounds.startMapHud()
   seats.fill(undefined)
@@ -83,6 +94,7 @@ function joinSide(player: Player, args: string): void {
 command('hookjoin', joinSide)
 
 function occupySide(player: Player, index: number): void {
+  cameraRetry.delete(player)
   lobbyRetry.delete(player)
   const previous = seats.indexOf(player)
   if (previous >= 0) seats[previous] = undefined
@@ -109,6 +121,7 @@ function leaveToSpectators(player: Player): void {
 command('hookleave', leaveToSpectators)
 onPlayerJoin((event) => rounds.forgetHud(event.connection.player))
 onPlayerLeave((event) => {
+  cameraRetry.delete(event.connection.player)
   pickerEnabled.delete(event.connection.player)
   lobbyRetry.delete(event.connection.player)
   rounds.forgetHud(event.connection.player)
@@ -161,6 +174,11 @@ onFrame(({ timeSeconds }) => {
     if (retry === Infinity) {
       const pawn = connection.player.pawn()
       if (!pawn || (pawn.team !== 2 && pawn.team !== 3)) {
+        const due = cameraRetry.get(connection.player)
+        if (due !== undefined && timeSeconds >= due) {
+          if (connection.player.freeCamera(spectatorView.position, spectatorView.facing)) cameraRetry.delete(connection.player)
+          else cameraRetry.set(connection.player, timeSeconds + 0.5)
+        }
         pickerEnabled.add(connection.player)
         continue
       }
@@ -177,6 +195,7 @@ onFrame(({ timeSeconds }) => {
     pickerEnabled.delete(connection.player)
     const entered = connection.player.spectate()
     lobbyRetry.set(connection.player, entered ? Infinity : timeSeconds + 1)
+    if (entered) cameraRetry.set(connection.player, timeSeconds)
     if (entered) connection.player.chat('Ты наблюдатель. Нажми P1 или P2 на панели арены. Затем напиши /ready.')
   }
   for (const player of seats) {
@@ -185,6 +204,10 @@ onFrame(({ timeSeconds }) => {
     if (!pawn || pawn.health <= 0) {
       warpStoneGrants.delete(player)
       continue
+    }
+    // The engine can select a fallback origin before the first round placement.
+    if (rounds.phase === 'waiting' && pawn.team === 3 && Math.hypot(pawn.position.x, pawn.position.y) < 64 && pawn.position.z < 32) {
+      player.teleport(eastSpawn, { pitch: 0, yaw: 180, roll: 0 }, { x: 0, y: 0, z: 0 })
     }
     const grant = warpStoneGrants.get(player)
     if (grant?.entity === pawn.entity && timeSeconds < grant.retryAt) continue
