@@ -1,4 +1,4 @@
-import { createEntity, fireInput, show, hideHud, trace, Layers, TopStrip, Score, jsx, type Player, type Vector, type Angles } from 'modlock'
+import { hide, createEntity, fireInput, show, hideHud, trace, Layers, TopStrip, Score, jsx, type Player, type Vector, type Angles } from 'modlock'
 import { countdown } from './countdown'
 
 type Spawn = { position: Vector; facing: Angles }
@@ -169,6 +169,10 @@ export class Rounds {
     }
   }
 
+  forgetHud(player: Player): void {
+    this.lastHud.delete(player)
+  }
+
   draw(viewers: { player: Player; name: string; bot: boolean; ready: boolean }[], seats: (Player | undefined)[], scores: number[], now: number): void {
     const names = seats.map((p, i) => viewers.find((v) => v.player === p)?.name || `P${i + 1}: waiting`)
     const line = this.phase === 'waiting' ? seats.map((p, i) => `${names[i]}: ${!p ? 'EMPTY' : this.isReady(p) ? 'READY' : 'NOT READY'}`).join('\n')
@@ -188,7 +192,13 @@ export class Rounds {
     const connected = new Set(viewers.map((v) => v.player))
     for (const p of this.lastHud.keys()) if (!connected.has(p)) this.lastHud.delete(p)
     for (const viewer of viewers) {
-      if (viewer.bot || !viewer.ready || this.lastHud.get(viewer.player) === key) continue
+      if (viewer.bot || !viewer.ready) {
+        this.forgetHud(viewer.player)
+        continue
+      }
+      if (this.lastHud.get(viewer.player) === key) continue
+      const firstDraw = !this.lastHud.has(viewer.player)
+      if (firstDraw) hide(viewer.player) // Clear the SDK's slot cache before the first full redraw.
       const ui = [TopStrip({ heading: `HOOK ARENA | ROUND ${this.number} | FIRST TO 10`,
         keepTeamBar: false, line: `${names[0]}  vs  ${names[1]}`,
         children: Score({ points: [scores[0], scores[1]] }) })]
@@ -209,7 +219,10 @@ export class Rounds {
         }))
       }
       const hidden = hideHud(viewer.player, ['topBar', 'ownHealth', 'minimap', 'ammo'])
-      if (show(viewer.player, ui) && hidden) this.lastHud.set(viewer.player, key)
+      if (show(viewer.player, ui) && hidden) {
+        this.lastHud.set(viewer.player, key)
+        if (firstDraw) console.log('[Hook Arena] Full HUD accepted for slot', viewer.player.slot)
+      }
     }
   }
 }
