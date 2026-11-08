@@ -305,7 +305,7 @@ export class Rounds {
       }
       const hidden = hideHud(viewer.player, ['topBar', 'ownHealth', 'minimap', 'ammo', 'stats', 'souls', 'levelUp'])
       if (show(viewer.player, ui) && hidden) {
-        if (useCursor !== this.lobbyCursor.has(viewer.player)) {
+        if (firstDraw || useCursor !== this.lobbyCursor.has(viewer.player)) {
           if (!freeCursor(viewer.player, useCursor)) continue
           if (useCursor) this.lobbyCursor.add(viewer.player)
           else this.lobbyCursor.delete(viewer.player)

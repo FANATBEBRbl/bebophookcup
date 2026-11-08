@@ -1,6 +1,6 @@
 const fs = require('node:fs')
-const net = require('node:net')
-const { spawn } = require('node:child_process')
+const http = require('node:http')
+const { spawn, spawnSync } = require('node:child_process')
 const path = require('node:path')
 const readline = require('node:readline/promises')
 
@@ -35,13 +35,43 @@ async function main() {
     if (process.argv[3] === '--install-only') return
     host = '138.16.184.175'
   } finally { prompt.close() }
-  const relay = net.createServer(client => {
-    const upstream = net.connect(4321, host)
-    upstream.on('error', err => { console.error(err.message); client.destroy() })
-    client.on('error', () => upstream.destroy())
-    client.on('close', () => upstream.destroy())
-    upstream.on('close', () => client.destroy())
-    client.pipe(upstream).pipe(client)
+  // Steam's active account, not a name or server slot that changes on reconnect.
+  const active = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
+    '(Get-ItemProperty HKCU:\\Software\\Valve\\Steam\\ActiveProcess).ActiveUser'],
+    { encoding: 'utf8', windowsHide: true })
+  const account = active.stdout?.trim()
+  if (!/^[1-9][0-9]*$/.test(account || '') || BigInt(account) > 0xffffffffn)
+    throw Error('Sign in to Steam, then restart this launcher.')
+  const steamid = String(76561197960265728n + BigInt(account))
+  console.log('HUD account: ' + steamid)
+  let status = ''
+  const report = text => { if (status !== text) { status = text; console.log(text) } }
+  const relay = http.createServer((req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', 'https://hyperline.gg')
+    res.setHeader('Access-Control-Allow-Private-Network', 'true')
+    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS')
+    if (req.method === 'OPTIONS') { res.writeHead(204).end(); return }
+    if (req.method !== 'GET' || !['/panorama/stream', '/panorama/stream?encoding=binary'].includes(req.url)) {
+      res.writeHead(404).end(); return
+    }
+    const upstream = http.get({ hostname: host, port: 4321,
+      path: '/panorama/stream?steamid=' + steamid, agent: false }, stream => {
+      clearTimeout(connectTimer)
+      report(stream.statusCode === 200 ? 'HUD connected.' : 'HUD unavailable (HTTP ' + stream.statusCode + '). Check that the server HUD was updated.')
+      res.writeHead(stream.statusCode, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' })
+      res.flushHeaders()
+      stream.on('error', () => res.destroy())
+      stream.pipe(res)
+    })
+    const connectTimer = setTimeout(() => upstream.destroy(Error('HUD connection timeout')), 5000)
+    upstream.setTimeout(10000, () => upstream.destroy(Error('HUD heartbeat timeout')))
+    upstream.on('error', () => {
+      report('HUD reconnecting...')
+      clearTimeout(connectTimer)
+      if (res.headersSent) res.destroy()
+      else res.writeHead(503).end('HUD reconnecting')
+    })
+    res.on('close', () => { clearTimeout(connectTimer); upstream.destroy() })
   })
   relay.on('error', err => { console.error(err.message); process.exitCode = 1 })
   relay.listen(4320, '127.0.0.1', () => {

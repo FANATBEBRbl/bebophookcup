@@ -20,3 +20,15 @@ c.run({abilities:()=>abilities,blockInput(){},setAbility:opts=>changes.push(opts
 assert.equal(changes.length,1)
 assert.equal(changes[0].ability,'another_skill')
 assert.equal(changes[0].upgrades,0)
+
+const cs = {name:'upgrade_counterspell',slot:5,upgrades:1,cooldownStart:100,cooldownEnd:123}
+let mask = 0n
+const changesCS = []
+const cp = {abilities:()=>[cs],blockInput:m=>{mask=m},setAbility:o=>changesCS.push(o)}
+c.run(cp,101)
+assert.equal(changesCS[0].cooldownEnd,130)
+assert.equal(mask & Buttons.parry,0n)
+cs.cooldownEnd=130;changesCS.length=0;c.run(cp,110)
+assert.equal(changesCS.length,0)
+c.run(cp,111,true);assert.notEqual(mask & Buttons.parry,0n)
+console.log('PASS: Counterspell 30s, no repeated cooldown extension, parry allowed only in live round')
