@@ -239,6 +239,7 @@ onFrame(({ timeSeconds }) => {
       player.giveItem('upgrade_superior_stamina')
     }
     if (!abilities.some(a => a.name === 'upgrade_warp_stone')) player.giveItem('upgrade_warp_stone')
+    if (!abilities.some(a => a.name === 'upgrade_magic_carpet')) player.giveItem('upgrade_magic_carpet')
     loadoutChecks.set(player, { entity: pawn.entity, retryAt: timeSeconds + 1 })
   }
   if (!spawnEditor) rounds.update(seats, timeSeconds)

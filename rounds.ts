@@ -252,20 +252,27 @@ export class Rounds {
       const participant = seats.includes(viewer.player) && this.phase !== 'finished'
       const waiting = participant && this.phase === 'waiting'
       const useCursor = choosing || waiting || (participant && this.phase === 'error')
-      const viewerKey = key + ':' + choosing + ':' + seats.map(p => p?.slot ?? '-').join(',')
+      const hook = participant ? viewer.player.abilities().find(a => a.name === 'citadel_ability_hook') : undefined
+      const remaining = hook ? Math.max(0, Math.ceil((hook.cooldownEnd || 0) - now)) : 0
+      const hookStatus = !hook ? '' : remaining ? `${remaining} с` : this.phase === 'live' ? 'Готов' : 'Ожидание'
+      const viewerKey = hookStatus + key + ':' + choosing + ':' + seats.map(p => p?.slot ?? '-').join(',')
       if (this.lastHud.get(viewer.player) === viewerKey) continue
       const firstDraw = !this.lastHud.has(viewer.player)
       if (firstDraw) hide(viewer.player) // Clear the SDK's slot cache before the first full redraw.
       const ui = [TopStrip({ heading: `HOOK ARENA | ROUND ${this.number} | FIRST TO 10`,
         keepTeamBar: false, line: `${names[0]}  vs  ${names[1]}`,
         children: Score({ points: [scores[0], scores[1]] }) })]
+      if (hook) ui.push(jsx('panel', { style: { horizontalAlign: 'center', verticalAlign: 'bottom',
+        flow: 'down', margin: [0, 0, 24, 0], padding: 5, background: '#101820dd', borderRadius: 8 },
+        children: [jsx('image', { src: 'file://{images}/hud/abilities/bebop/bebop_hook.psd', style: { width: 48, height: 48, horizontalAlign: 'center' } }),
+          jsx('label', { children: hookStatus, style: { horizontalAlign: 'center', color: '#f5c775', fontSize: 16 } })] }))
       if (this.phase === 'countdown' || this.phase === 'prepare') {
         ui.push(countdown(this.number,
           this.phase === 'countdown' ? Math.max(1, Math.ceil(this.deadline - now)) : undefined, this.phrase))
       }
       if (this.phase === 'break' || this.phase === 'finished' || this.phase === 'error' || this.phase === 'waiting') {
         const title = this.phase === 'waiting' ? 'READY CHECK' : this.phase === 'error' ? 'ARENA SETUP' : this.result
-        const detail = this.phase === 'finished' ? 'Next duel: /hookjoin 1 or /hookjoin 2'
+        const detail = this.phase === 'finished' ? `Итоговый счёт: ${scores[0]} : ${scores[1]}`
           : this.phase === 'break' ? `Next: round ${this.number + 1}` : line + (this.phase === 'waiting' ? '\nУчастники: /ready' : '')
         ui.push(jsx('panel', {
           children: [jsx('label', { children: title, style: { width: '100%', fontSize: 24, face: 'body', bold: true, color: '#f5c775', textOverflow: 'shrink' } }),
@@ -294,7 +301,7 @@ export class Rounds {
           children: [jsx('label', { children: choosing ? 'Войти в дуэль' : 'Дуэль', style: { color: '#f5c775', fontSize: 22 } }), ...actions],
         }))
       }
-      const hidden = hideHud(viewer.player, ['topBar', 'ownHealth', 'minimap', 'ammo'])
+      const hidden = hideHud(viewer.player, ['topBar', 'ownHealth', 'minimap', 'ammo', 'stats', 'souls', 'abilities', 'levelUp'])
       if (show(viewer.player, ui) && hidden) {
         if (useCursor !== this.lobbyCursor.has(viewer.player)) {
           if (!freeCursor(viewer.player, useCursor)) continue
