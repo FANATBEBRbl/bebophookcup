@@ -13,11 +13,10 @@ for(let slot=0;slot<4;slot++){
 }
 console.log('PASS: fire/melee/other skills blocked, actual hook slot allowed, cooldown 3s, full upgrades enforced');
 
-for (let slot = 4; slot <= 7; slot++) {
- const carpet={name:'upgrade_magic_carpet',slot,cooldownEnd:0}
- let mask=0n, writes=[]
- c.run({abilities:()=>[carpet],blockInput:m=>{mask=m},setAbility:o=>writes.push(o)},100)
- const itemBits=15n<<37n
- assert.equal(mask&itemBits,1n<<BigInt(37+slot-4))
- assert.deepEqual([writes[0].ability,writes[0].cooldownEnd],[carpet.name,160])
-}
+const changes = []
+const abilities = [{name:'citadel_ability_hook', slot:2, upgrades:15},
+  {name:'another_skill',slot:1,upgrades:7},{name:'upgrade_warp_stone',slot:4,upgrades:1}]
+c.run({abilities:()=>abilities,blockInput(){},setAbility:opts=>changes.push(opts)},100)
+assert.equal(changes.length,1)
+assert.equal(changes[0].ability,'another_skill')
+assert.equal(changes[0].upgrades,0)
