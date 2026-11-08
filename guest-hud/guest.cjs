@@ -1,5 +1,6 @@
 const fs = require('node:fs')
 const net = require('node:net')
+const { spawn } = require('node:child_process')
 const path = require('node:path')
 const readline = require('node:readline/promises')
 
@@ -32,7 +33,7 @@ async function main() {
       fs.renameSync(tmp, config)
     }
     if (process.argv[3] === '--install-only') return
-    host = (await prompt.question('HUD host IP [192.168.2.168]: ')).trim() || '192.168.2.168'
+    host = '138.16.184.175'
   } finally { prompt.close() }
   const relay = net.createServer(client => {
     const upstream = net.connect(4321, host)
@@ -43,6 +44,16 @@ async function main() {
     client.pipe(upstream).pipe(client)
   })
   relay.on('error', err => { console.error(err.message); process.exitCode = 1 })
-  relay.listen(4320, '127.0.0.1', () => console.log('HUD ready. Keep this window open and start Deadlock.'))
+  relay.listen(4320, '127.0.0.1', () => {
+    console.log('HUD ready. Keep this window open.')
+    if (!process.argv.includes('--launch')) return
+    const launcher = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
+      "Start-Process 'steam://run/1422450//+connect%20138.16.184.175:27067/'"],
+      { windowsHide: true, stdio: 'inherit' })
+    launcher.on('error', err => console.error('Steam launch failed:', err.message))
+    launcher.on('exit', code => {
+      if (code !== 0) console.error('Steam launch failed. Start Deadlock and connect to 138.16.184.175:27067 manually.')
+    })
+  })
 }
 main().catch(err => { console.error(err.message); process.exitCode = 1 })
