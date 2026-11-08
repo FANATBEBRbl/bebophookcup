@@ -219,6 +219,8 @@ onFrame(({ timeSeconds }) => {
   if (pending) {
     const pawn = pending.victim.pawn()
     if (pawn && pawn.entity === pending.entity && pawn.health <= 0) {
+      pending.victim.sound('Stinger.Death')
+      if (scores[pending.side - 1] + 1 >= target) seats[pending.side - 1]?.sound('Music.Match.Win')
       point(pending.side)
       rounds.end(pending.side, winner !== 0, timeSeconds)
       announce(`[HOOK +1 P${pending.side}] ${scoreText()}`)

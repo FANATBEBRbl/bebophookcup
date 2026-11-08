@@ -2,6 +2,7 @@ const fs = require('node:fs')
 const vm = require('node:vm')
 const assert = require('node:assert/strict')
 const { stripTypeScriptTypes } = require('node:module')
+const sounds = []
 const commands = new Map()
 let frame, join, leave, victim, hookVictim
 const viewers = Array.from({ length: 8 }, (_, slot) => {
@@ -14,6 +15,7 @@ const viewers = Array.from({ length: 8 }, (_, slot) => {
     chat(message) { this.messages.push(message) },
     pawn() { return this.team > 1 ? {entity: slot + 20, position: this.position, health: this === victim ? 0 : 100, team: this.team} : undefined },
     abilities() { return [{name: 'citadel_ability_hook', entity: 100 + slot}] },
+    sound(name) { sounds.push([slot,name]); return true },
     giveItem() { return true }, blockInput() { return true },
   }
   return { player, ready: true, bot: false }
@@ -49,6 +51,7 @@ for (const cmd of commands.keys()) assert.ok(help.includes('/' + cmd), cmd)
 context.duel.phase = 'live'; context.matchPoint()
 hookVictim = 21; tick(2); tick(2.1); tick(2.2)
 assert.equal(context.duel.phase, 'finished')
+assert.deepEqual(sounds,[[1,'Stinger.Death'],[0,'Music.Match.Win']])
 assert.ok(viewers.every(v => v.player.team === 1))
 tick(3); viewers[3].player.team = 2; viewers[4].player.team = 3; tick(4)
 viewers[5].player.team = 2; tick(5)
