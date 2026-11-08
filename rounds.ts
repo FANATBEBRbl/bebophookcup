@@ -196,7 +196,9 @@ export class Rounds {
         this.placed[i] = true
       }
       if (this.placed.every(Boolean)) {
+        if (this.members.some(player => (player.pawn()?.maxStamina ?? 0) < 5)) return
         for (const player of this.members) {
+          if (!player.setStamina(5)) return
           if (!player.setAbility({ ability: 'citadel_ability_hook', cooldownEnd: now + 3 })) return
         }
         this.pendingStoneRefresh = new Set(this.members)

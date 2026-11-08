@@ -10,7 +10,7 @@ const target = 10
 let scores = [0, 0]
 let winner = 0
 const seats: (Player | undefined)[] = [undefined, undefined]
-const warpStoneGrants = new Map<Player, { entity: number; retryAt: number }>()
+const loadoutChecks = new Map<Player, { entity: number; retryAt: number }>()
 // Positions of the two info_team_spawn markers in bebop_arena_small.
 const eastSpawn = { x: 896, y: -864, z: 100 }
 let spawnEditor: Player | undefined
@@ -54,7 +54,7 @@ onWorld(() => {
   rounds.loadSpawns()
   rounds.startMapHud()
   seats.fill(undefined)
-  warpStoneGrants.clear()
+  loadoutChecks.clear()
   lobbyRetry.clear()
   pickerEnabled.clear()
   spawnEditor = undefined
@@ -104,7 +104,7 @@ function occupySide(player: Player, index: number): void {
 }
 
 function leave(player: Player): void {
-  warpStoneGrants.delete(player)
+  loadoutChecks.delete(player)
   player.blockInput(0n)
   const index = seats.indexOf(player)
   if (index < 0) return
@@ -225,17 +225,21 @@ onFrame(({ timeSeconds }) => {
     if (!player) continue
     const pawn = player.pawn()
     if (!pawn || pawn.health <= 0) {
-      warpStoneGrants.delete(player)
+      loadoutChecks.delete(player)
       continue
     }
     // The engine can select a fallback origin before the first round placement.
     if (rounds.phase === 'waiting' && pawn.team === 3 && Math.hypot(pawn.position.x, pawn.position.y) < 64 && pawn.position.z < 32) {
       player.teleport(eastSpawn, { pitch: 0, yaw: 180, roll: 0 }, { x: 0, y: 0, z: 0 })
     }
-    const grant = warpStoneGrants.get(player)
+    const grant = loadoutChecks.get(player)
     if (grant?.entity === pawn.entity && timeSeconds < grant.retryAt) continue
-    if (!player.abilities().some(a => a.name === 'upgrade_warp_stone')) player.giveItem('upgrade_warp_stone')
-    warpStoneGrants.set(player, { entity: pawn.entity, retryAt: timeSeconds + 1 })
+    const abilities = player.abilities()
+    if (pawn.maxStamina !== undefined && pawn.maxStamina < 5 && !abilities.some(a => a.name === 'upgrade_superior_stamina')) {
+      player.giveItem('upgrade_superior_stamina')
+    }
+    if (!abilities.some(a => a.name === 'upgrade_warp_stone')) player.giveItem('upgrade_warp_stone')
+    loadoutChecks.set(player, { entity: pawn.entity, retryAt: timeSeconds + 1 })
   }
   if (!spawnEditor) rounds.update(seats, timeSeconds)
   for (const player of seats) {
@@ -261,7 +265,7 @@ onFrame(({ timeSeconds }) => {
         for (const player of seats) {
           if (!player) continue
           player.blockInput(0n)
-          warpStoneGrants.delete(player)
+          loadoutChecks.delete(player)
           if (player === practiceBot) { player.removeBot(); practiceBot = undefined }
           else lobbyRetry.set(player, 0)
         }
