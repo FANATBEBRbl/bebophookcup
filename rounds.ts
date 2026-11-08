@@ -2,6 +2,8 @@ import { Action, freeCursor, readFile, writeFile, hide, createEntity, fireInput,
 import { countdown } from './countdown'
 
 type Spawn = { position: Vector; facing: Angles }
+// Midway between the map's west (-96) and east (896) start markers.
+const bankDividerX = 400
 const spawnFile = 'bebop_arena_small.spawns.v1.json'
 function validSpawn(value: unknown): value is Spawn {
   if (!value || typeof value !== 'object' || !('position' in value) || !('facing' in value)) return false
@@ -91,7 +93,7 @@ export class Rounds {
     if (this.pool.some((s) => Math.hypot(s.position.x - pawn.position.x, s.position.y - pawn.position.y, s.position.z - pawn.position.z) < 100)) return 'Too close to an existing spawn.'
     const point = { position: { ...pawn.position }, facing: { ...pawn.eyeAngles } }
     if (!validSpawn(point) || !this.saveSpawns([...this.pool, point])) return 'Could not save spawn. Pool unchanged.'
-    return `Spawn ${this.pool.length} saved. Place at least 4, behind cover, 800+ units apart.`
+    return `Spawn ${this.pool.length} saved. Place at least 4, on both banks, behind cover, 800+ units apart.`
   }
 
   clearSpawns(): boolean {
@@ -106,6 +108,7 @@ export class Rounds {
     const pairs: { a: number; b: number; key: string }[] = []
     for (let a = 0; a < this.pool.length; a++) for (let b = a + 1; b < this.pool.length; b++) {
       const p = this.pool[a].position, q = this.pool[b].position
+      if ((p.x - bankDividerX) * (q.x - bankDividerX) >= 0) continue
       if (Math.hypot(p.x - q.x, p.y - q.y) < 800) continue
       // Require actual static cover at two heights, not a player standing in the way.
       const covered = [40, 80].every((height) => {
@@ -120,7 +123,7 @@ export class Rounds {
     const choices = different.length ? different : pairs
     const pair = choices[Math.floor(Math.random() * choices.length)]
     this.previousPair = pair.key
-    this.spawns = Math.random() < 0.5 ? [this.pool[pair.a], this.pool[pair.b]] : [this.pool[pair.b], this.pool[pair.a]]
+    this.spawns = [this.pool[pair.a], this.pool[pair.b]].sort((west, east) => west.position.x - east.position.x)
     return true
   }
 
@@ -146,7 +149,7 @@ export class Rounds {
     this.phrase = choices[Math.floor(Math.random() * choices.length)]
     if (!this.choosePair()) {
       this.phase = 'error'
-      this.result = 'Need 4 /spawnadd points and a covered pair 800+ units apart; then /resetarena'
+      this.result = 'Нужны 4 точки /spawnadd и пара на разных берегах: укрытие и расстояние 800+. Затем /resetarena'
       return
     }
     this.phase = 'prepare'

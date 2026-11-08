@@ -12,8 +12,8 @@ for(const x of [0,1000,2000,3000]){a.state.position.x=x;r.addSpawn(a)}
 r.update(seats,0);assert.equal(r.phase,'waiting');r.setReady(a,true);r.update(seats,0);assert.equal(r.phase,'waiting');r.setReady(a,false);assert.equal(r.isReady(a),false);r.setReady(a,true);r.setReady(b,true);r.update(seats,0);assert.equal(r.phase,'countdown');assert.ok(!a.frozen&&!b.frozen);assert.equal(a.hookEnd,3);assert.equal(b.hookEnd,3);
 r.update(seats,2.9);assert.equal(r.phase,'countdown');r.update(seats,3);assert.equal(r.phase,'live');assert.ok(!a.frozen&&!b.frozen);
 b.state.health=0;r.end(1,false,4);assert.equal(r.phase,'break');r.update(seats,5.9);assert.equal(b.revives,0);
-r.update(seats,6);assert.equal(b.revives,1);r.update(seats,6.3);assert.equal(r.phase,'countdown');assert.ok(Math.abs(a.state.position.x-b.state.position.x)>=800);
-r.update(seats,9.3);assert.equal(r.phase,'live');r.replay(10);r.update(seats,10);assert.equal(r.number,2);assert.ok(Math.abs(a.state.position.x-b.state.position.x)>=800);
+r.update(seats,6);assert.equal(b.revives,1);r.update(seats,6.3);assert.equal(r.phase,'countdown');assert.ok(a.state.position.x < 400 && b.state.position.x > 400);assert.ok(b.state.position.x-a.state.position.x>=800);
+r.update(seats,9.3);assert.equal(r.phase,'live');r.replay(10);r.update(seats,10);assert.equal(r.number,2);assert.ok(a.state.position.x < 400 && b.state.position.x > 400);assert.ok(b.state.position.x-a.state.position.x>=800);
 r.end(1,true,11);assert.equal(r.phase,'finished');r.update(seats,20);assert.equal(r.phase,'finished');assert.ok(!a.frozen&&!b.frozen);
 const viewers=[{player:a,name:'A',ready:true,bot:false}];r.draw(viewers,seats,[10,0],20);r.draw(viewers,seats,[10,0],21);assert.equal(draws,1);assert.equal(clears,1);
 r.forgetHud(a);r.draw(viewers,seats,[10,0],21);assert.equal(draws,2);assert.equal(clears,2);
@@ -101,3 +101,9 @@ for(const t of [10.5,11,12,13]) delayed.update([late,absent],t)
 assert.equal(refreshed,1)
 assert.equal(delayed.phase,'live')
 console.log('PASS: late Warp Stone refreshed once, missing Warp Stone never blocks round')
+
+const oneBank = vm.runInContext('new Rounds()', context)
+for(const x of [900,1800,2700,3600]) { late.state.position.x=x; oneBank.addSpawn(late) }
+oneBank.setReady(late,true); oneBank.setReady(absent,true)
+oneBank.update([late,absent],14)
+assert.equal(oneBank.phase,'error')
