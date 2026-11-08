@@ -1,4 +1,4 @@
-import { Action, freeCursor, readFile, writeFile, hide, createEntity, fireInput, show, hideHud, trace, Layers, TopStrip, Score, jsx, type Player, type Vector, type Angles } from 'modlock'
+import { Action, freeCursor, readFile, writeFile, hide, createEntity, fireInput, show, hideHud, trace, Layers, TopStrip, Score, jsx, type Style, type Player, type Vector, type Angles } from 'modlock'
 import { countdown } from './countdown'
 
 type Spawn = { position: Vector; facing: Angles }
@@ -12,8 +12,13 @@ function validSpawn(value: unknown): value is Spawn {
     facing.pitch, facing.yaw, facing.roll].every(Number.isFinite)
 }
 
-const phrases = ['DAVAI BRATAN', 'OPA HU4OK', 'SVEZHEE MYASO', 'IDI SYUDA',
-  'LOVI PODAROK', 'NU VSE, PRIEHALI', 'BRATAN, NE PROMAHNIS', 'ETO MOI HU4OK']
+const phrases = ['LET IT FLY', 'WHAT A HOOK', 'FRESH MEAT', 'GET OVER HERE',
+  'SPECIAL DELIVERY', 'END OF THE LINE', 'MAKE IT COUNT', 'HOOK INCOMING']
+const cardStyle = { flow: 'down', padding: 16, background: '#0b0d09f2',
+  borderWidth: 1, borderColor: '#ffefd770', borderRadius: 12 } as const
+const headingStyle = { face: 'block', bold: true, uppercase: true, letterSpacing: 1,
+  fontSize: 18, color: '#ffefd7' } as const
+const buttonStyle: Style = { width: '100%', margin: [5, 0, 0, 0] }
 export class Rounds {
   phase: 'waiting' | 'prepare' | 'countdown' | 'live' | 'break' | 'finished' | 'error' = 'waiting'
   number = 1
@@ -149,7 +154,7 @@ export class Rounds {
     this.phrase = choices[Math.floor(Math.random() * choices.length)]
     if (!this.choosePair()) {
       this.phase = 'error'
-      this.result = 'Нужны 4 точки /spawnadd и пара на разных берегах: укрытие и расстояние 800+. Затем /resetarena'
+      this.result = 'Save 4 spawns with /spawnadd. Place a covered pair on opposite banks at least 800 units apart, then use /resetarena.'
       return
     }
     this.phase = 'prepare'
@@ -265,33 +270,32 @@ export class Rounds {
       }
       if (this.phase === 'break' || this.phase === 'finished' || this.phase === 'error' || this.phase === 'waiting') {
         const title = this.phase === 'waiting' ? 'READY CHECK' : this.phase === 'error' ? 'ARENA SETUP' : this.result
-        const detail = this.phase === 'finished' ? `Итоговый счёт: ${scores[0]} : ${scores[1]}`
-          : this.phase === 'break' ? `Next: round ${this.number + 1}` : line + (this.phase === 'waiting' ? '\nУчастники: /ready' : '')
+        const detail = this.phase === 'finished' ? `Final score: ${scores[0]} : ${scores[1]}`
+          : this.phase === 'break' ? `Next: round ${this.number + 1}` : line
         ui.push(jsx('panel', {
-          children: [jsx('label', { children: title, style: { width: '100%', fontSize: 24, face: 'body', bold: true, color: '#f5c775', textOverflow: 'shrink' } }),
-            jsx('label', { children: detail, style: { width: '100%', fontSize: 18, face: 'body', color: '#eee8db', margin: [10, 0, 0, 0] } })],
+          children: [jsx('label', { children: title, style: { width: '100%', ...headingStyle, textOverflow: 'shrink' } }),
+            jsx('label', { children: detail, style: { width: '100%', fontSize: 18, face: 'body', color: '#bfb3a1', margin: [10, 0, 0, 0] } })],
           style: { horizontalAlign: 'right', verticalAlign: 'bottom', margin: [0, 28, 32, 0],
-            width: 360, flow: 'down', padding: 20, background: '#101820ee',
-            borderRadius: 12 },
+            width: 360, ...cardStyle },
         }))
       }
       if (useCursor) {
         const isReady = this.isReady(viewer.player)
         const actions = choosing ? [0, 1].map(i => Action({
-          disabled: !!seats[i], children: seats[i] ? `P${i + 1} · занято` : `Играть за P${i + 1}`,
+          style: buttonStyle, disabled: !!seats[i], children: seats[i] ? `P${i + 1} · Taken` : `Join P${i + 1}`,
           onPress: actor => { if (!seats[i] && actor === viewer.player && !seats.includes(actor)) joinSide(actor, String(i + 1)) },
         })) : [
-          ...(waiting ? [Action({ kind: 'primary', children: isReady ? 'Отменить готовность' : 'Готов',
+          ...(waiting ? [Action({ style: buttonStyle, kind: 'primary', children: isReady ? 'Cancel Ready' : 'Ready',
             onPress: actor => { if (actor === viewer.player && this.phase === 'waiting' && seats.includes(actor)) ready(actor, !isReady) },
           })] : []),
-          Action({ kind: 'quiet', children: 'Выйти в наблюдатели',
+          Action({ style: buttonStyle, kind: 'quiet', children: 'Spectate',
             onPress: actor => { if (actor === viewer.player && seats.includes(actor)) leave(actor) },
           }),
         ]
         ui.push(jsx('panel', {
-          style: { horizontalAlign: 'left', verticalAlign: 'bottom', flow: 'down', margin: [0, 0, 32, 28],
-            width: 280, padding: 16, background: '#101820ee', borderRadius: 12 },
-          children: [jsx('label', { children: choosing ? 'Войти в дуэль' : 'Дуэль', style: { color: '#f5c775', fontSize: 22 } }), ...actions],
+          style: { horizontalAlign: 'left', verticalAlign: 'bottom', margin: [0, 0, 32, 28],
+            width: 260, ...cardStyle },
+          children: [jsx('label', { children: choosing ? 'Join Duel' : 'Duel', style: headingStyle }), ...actions],
         }))
       }
       const hidden = hideHud(viewer.player, ['topBar', 'ownHealth', 'minimap', 'ammo', 'stats', 'souls', 'levelUp'])

@@ -62,7 +62,7 @@ const spectator = player(1,0)
 let lastTree
 context.show = (_, tree) => { lastTree = tree; return true }
 picker.draw(viewers,[spectator,b],[0,0],1,choose)
-assert.equal(lastTree.some(node => node?.props?.children?.some?.(c => c?.props?.children === 'Войти в дуэль')),false)
+assert.equal(lastTree.some(node => node?.props?.children?.some?.(c => c?.props?.children === 'Join Duel')),false)
 assert.deepEqual(cursors,[true,false])
 console.log('PASS: spectator HUD selection and cursor release')
 let left

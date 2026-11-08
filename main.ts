@@ -70,7 +70,7 @@ function point(side: number): void {
 }
 
 function joinSide(player: Player, args: string): void {
-  if (spawnEditor === player) { player.chat('Сначала выйди из редактора: /dev off'); return }
+  if (spawnEditor === player) { player.chat('Leave the spawn editor first with /dev off'); return }
   console.log('[Hook Arena] hookjoin received, slot', player.slot, 'side', args.slice(0, 8))
   const index = args === '1' ? 0 : args === '2' ? 1 : -1
   if (index < 0) { player.chat('Usage: /hookjoin 1 or /hookjoin 2'); return }
@@ -80,13 +80,13 @@ function joinSide(player: Player, args: string): void {
   }
   if (seats[index] === player) { player.chat(`[Hook Arena] You are P${index + 1}`); return }
   if (!['waiting', 'finished', 'error'].includes(rounds.phase)) {
-    player.chat('Дождись конца матча или используй /hookleave.')
+    player.chat('Wait for the match to end or use /hookleave.')
     return
   }
   const hero = findHero('Bebop')
   if (!hero || player.selectHero(hero.name, index + 2) === undefined) {
     console.log('[Hook Arena] selecting Bebop failed, slot', player.slot, 'team', index + 2)
-    player.chat('Не удалось выбрать Bebop. Повтори /hookjoin через секунду.')
+    player.chat('Could not select Bebop. Try /hookjoin again in a moment.')
     return
   }
   occupySide(player, index)
@@ -100,7 +100,7 @@ function occupySide(player: Player, index: number): void {
   seats[index] = player
   reset()
   caught.fill(undefined)
-  announce(`[Hook Arena] Player slot ${player.slot} joined P${index + 1}. Нажми «Готов», когда появится Bebop.`)
+  announce(`[Hook Arena] Player slot ${player.slot} joined P${index + 1}. Select Ready when Bebop appears.`)
 }
 
 function leave(player: Player): void {
@@ -120,32 +120,32 @@ function leaveToSpectators(player: Player): void {
 }
 command('hookleave', leaveToSpectators)
 command('dev', (player, args) => {
-  if (args !== '' && args !== 'off') { player.chat('Используй /dev или /dev off'); return }
+  if (args !== '' && args !== 'off') { player.chat('Use /dev or /dev off.'); return }
   if (spawnEditor === player) {
     leaveToSpectators(player)
-    announce('Редактирование спавнов завершено.')
+    announce('Spawn editing finished.')
     return
   }
-  if (args === 'off') { player.chat('Режим редактирования уже выключен.'); return }
-  if (spawnEditor) { player.chat('Другой игрок уже редактирует спавны.'); return }
+  if (args === 'off') { player.chat('Spawn editing is already off.'); return }
+  if (spawnEditor) { player.chat('Another player is editing spawns.'); return }
   if (!['waiting', 'finished', 'error'].includes(rounds.phase)) {
-    player.chat('Дождись окончания матча.'); return
+    player.chat('Wait for the match to finish.'); return
   }
   const pawn = player.pawn()
   if (!pawn || (pawn.team !== 2 && pawn.team !== 3)) {
     const hero = findHero('Bebop')
     if (!hero || player.selectHero(hero.name, 2) === undefined) {
-      player.chat('Не удалось выдать Bebop. Выбери сторону и повтори /dev.'); return
+      player.chat('Could not select Bebop. Pick a side and try /dev again.'); return
     }
   } else if (pawn.health <= 0 && !player.respawn()) {
-    player.chat('Дождись возрождения и повтори /dev.'); return
+    player.chat('Wait for your respawn, then try /dev again.'); return
   }
   leave(player)
   spawnEditor = player
   lobbyRetry.delete(player)
   pickerEnabled.delete(player)
-  announce('Идёт редактирование спавнов. Следующая дуэль начнётся после выхода редактора.')
-  player.chat('/spawnclear — очистить пул, /spawnadd — сохранить точку, /dev off — в наблюдатели.')
+  announce('Spawn editing in progress. The next duel will start when the editor leaves.')
+  player.chat('/spawnclear clears all points. /spawnadd saves your position. /dev off returns you to spectators.')
 })
 onPlayerJoin((event) => rounds.forgetHud(event.connection.player))
 onPlayerLeave((event) => {
@@ -157,7 +157,7 @@ onPlayerLeave((event) => {
 })
 
 command('hookbot', (player) => {
-  if (spawnEditor === player) { player.chat('Сначала выйди из редактора: /dev off'); return }
+  if (spawnEditor === player) { player.chat('Leave the spawn editor first with /dev off'); return }
   const pawn = player.pawn()
   if (!pawn || pawn.health <= 0 || (pawn.team !== 2 && pawn.team !== 3)
     || !player.abilities().some((ability) => ability.name === 'citadel_ability_hook')) {
@@ -213,13 +213,13 @@ onFrame(({ timeSeconds }) => {
         occupySide(connection.player, index)
         continue
       }
-      connection.player.chat('Эта сторона занята. Выбери свободную сторону.')
+      connection.player.chat('That side is taken. Choose an open side.')
       lobbyRetry.set(connection.player, 0)
     } else if (retry !== undefined && timeSeconds < retry) continue
     pickerEnabled.delete(connection.player)
     const entered = connection.player.spectate()
     lobbyRetry.set(connection.player, entered ? Infinity : timeSeconds + 1)
-    if (entered) connection.player.chat('Ты наблюдатель. Нажми P1 или P2 на панели арены. Затем напиши /ready.')
+    if (entered) connection.player.chat('You are spectating. Select P1 or P2, then Ready.')
   }
   for (const player of seats) {
     if (!player) continue
@@ -270,7 +270,7 @@ onFrame(({ timeSeconds }) => {
           else lobbyRetry.set(player, 0)
         }
         seats.fill(undefined)
-        announce('Матч окончен. Для следующей дуэли: /hookjoin 1 или /hookjoin 2.')
+        announce('Match over. Select an open side to play the next duel.')
       }
       pending = undefined
     } else if (timeSeconds >= pending.until || (pawn && pawn.entity !== pending.entity)) {
@@ -337,13 +337,13 @@ command('ready', (player) => ready(player, true))
 command('unready', (player) => ready(player, false))
 command('help', (player) => {
   for (const line of [
-    '/hookjoin 1 или /hookjoin 2 — занять сторону за Bebop; /hookleave — наблюдать.',
-    '/ready — готов; /unready — отменить готовность.',
-    '/hookscore — счёт; /hookhud — обновить HUD; /help — команды.',
-    '/hookbot — тренировка; /removehookbot — убрать бота.',
-    '/dev — редактировать спавны; /dev off — вернуться в наблюдатели.',
-    '/spawnadd — записать позицию; /spawnclear — очистить точки.',
-    '/resetarena — сброс матча; /testpoint [1|2] — тест очка; /hello — тест связи.',
+    '/hookjoin 1 or /hookjoin 2: join a side as Bebop. /hookleave: spectate.',
+    '/ready: ready up. /unready: cancel.',
+    '/hookscore: score. /hookhud: refresh HUD. /help: commands.',
+    '/hookbot: practice. /removehookbot: remove practice bot.',
+    '/dev: edit spawns. /dev off: return to spectators.',
+    '/spawnadd: save a spawn. /spawnclear: clear spawns.',
+    '/resetarena: reset match. /testpoint [1|2]: test scoring. /hello: test connection.',
   ]) player.chat(line)
 })
 
@@ -366,18 +366,18 @@ command('testpoint', (player, args) => {
 })
 
 command('resetarena', (player) => {
-  if (seats.some(Boolean) && !seats.includes(player)) { player.chat('Сброс доступен участникам дуэли.'); return }
+  if (seats.some(Boolean) && !seats.includes(player)) { player.chat('Only duelists can reset an occupied arena.'); return }
   reset()
   announce(scoreText())
 })
 
 command('spawnadd', (player) => {
-  if (spawnEditor && player !== spawnEditor) { player.chat('Спавны редактирует другой игрок.'); return }
+  if (spawnEditor && player !== spawnEditor) { player.chat('Another player is editing spawns.'); return }
   player.chat(`[Hook Arena] ${rounds.addSpawn(player)}`)
 })
 command('spawnclear', (player) => {
   if (spawnEditor !== player && (spawnEditor || seats.some(Boolean))) {
-    player.chat('Для очистки точек войди в режим /dev между матчами.'); return
+    player.chat('Enter /dev between matches to clear spawn points.'); return
   }
   player.chat(rounds.clearSpawns() ? '[Hook Arena] Spawn pool cleared.' : '[Hook Arena] Could not save. Pool unchanged.')
 })
