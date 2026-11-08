@@ -21,14 +21,11 @@ assert.equal(changes.length,1)
 assert.equal(changes[0].ability,'another_skill')
 assert.equal(changes[0].upgrades,0)
 
-const cs = {name:'upgrade_counterspell',slot:5,upgrades:1,cooldownStart:100,cooldownEnd:123}
-let mask = 0n
-const changesCS = []
-const cp = {abilities:()=>[cs],blockInput:m=>{mask=m},setAbility:o=>changesCS.push(o)}
-c.run(cp,101)
-assert.equal(changesCS[0].cooldownEnd,130)
-assert.equal(mask & Buttons.parry,0n)
-cs.cooldownEnd=130;changesCS.length=0;c.run(cp,110)
-assert.equal(changesCS.length,0)
-c.run(cp,111,true);assert.notEqual(mask & Buttons.parry,0n)
-console.log('PASS: Counterspell 30s, no repeated cooldown extension, parry allowed only in live round')
+// Parry remains blocked even if an existing hero still carries Counterspell.
+for (const locked of [false, true]) {
+  let blocked = 0n
+  c.run({abilities:()=>[{name:'upgrade_counterspell',slot:5,upgrades:1}],
+    blockInput:mask=>{blocked=mask},setAbility(){throw Error('Unexpected item mutation')}},100,locked)
+  assert.notEqual(blocked & Buttons.parry,0n)
+}
+console.log('PASS: parry always blocked, including heroes carrying Counterspell')
