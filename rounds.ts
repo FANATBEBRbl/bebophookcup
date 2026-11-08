@@ -12,8 +12,13 @@ function validSpawn(value: unknown): value is Spawn {
     facing.pitch, facing.yaw, facing.roll].every(Number.isFinite)
 }
 
-const phrases = ['LET IT FLY', 'WHAT A HOOK', 'FRESH MEAT', 'GET OVER HERE',
-  'SPECIAL DELIVERY', 'END OF THE LINE', 'MAKE IT COUNT', 'HOOK INCOMING']
+const phrases = [
+  'SV3ZH33 M9CO', 'DAVAI BRATAN', 'OPA HU4OK', 'GL HF PACANI',
+  'GO GO GO', 'RUSH B BRATVA', 'KTO KINUL DIM?', 'NE SIDI V DIME',
+  'V1HODI PO ODNOMU', 'LOVI PODAROK', 'TA6I BAT9', 'NU VSE, PRIEHALI',
+  'MINUS ODIN', 'BEZ ZAKUPA', 'P1NG 999', 'ETO VSE LAGI',
+  'ADMIN ON CHISTIY?', 'MAMOI KLYANUS', 'NA DEMKE VIDNO', 'GG BEZ OBID',
+]
 const cardStyle = { flow: 'down', padding: 16, background: '#0b0d09f2',
   borderWidth: 1, borderColor: '#ffefd770', borderRadius: 12 } as const
 const headingStyle = { face: 'block', bold: true, uppercase: true, letterSpacing: 1,
