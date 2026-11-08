@@ -13,6 +13,7 @@ const seats: (Player | undefined)[] = [undefined, undefined]
 const warpStoneGrants = new Map<Player, { entity: number; retryAt: number }>()
 // Positions of the two info_team_spawn markers in bebop_arena_small.
 const eastSpawn = { x: 896, y: -864, z: 100 }
+let spawnEditor: Player | undefined
 const pickerEnabled = new Set<Player>()
 const lobbyRetry = new Map<Player, number>()
 const caught: (number | undefined)[] = [undefined, undefined]
@@ -56,6 +57,7 @@ onWorld(() => {
   warpStoneGrants.clear()
   lobbyRetry.clear()
   pickerEnabled.clear()
+  spawnEditor = undefined
   setServerVariable('citadel_server_max_spectator_slots', 8)
   caught.fill(undefined)
   practiceBot = undefined
@@ -68,6 +70,7 @@ function point(side: number): void {
 }
 
 function joinSide(player: Player, args: string): void {
+  if (spawnEditor === player) { player.chat('Сначала выйди из редактора: /dev off'); return }
   console.log('[Hook Arena] hookjoin received, slot', player.slot, 'side', args.slice(0, 8))
   const index = args === '1' ? 0 : args === '2' ? 1 : -1
   if (index < 0) { player.chat('Usage: /hookjoin 1 or /hookjoin 2'); return }
@@ -111,12 +114,42 @@ function leave(player: Player): void {
   announce('[Hook Arena] Participant left. Hooks paused; score reset.')
 }
 function leaveToSpectators(player: Player): void {
+  if (spawnEditor === player) spawnEditor = undefined
   leave(player)
   lobbyRetry.set(player, 0)
 }
 command('hookleave', leaveToSpectators)
+command('dev', (player, args) => {
+  if (args !== '' && args !== 'off') { player.chat('Используй /dev или /dev off'); return }
+  if (spawnEditor === player) {
+    leaveToSpectators(player)
+    announce('Редактирование спавнов завершено.')
+    return
+  }
+  if (args === 'off') { player.chat('Режим редактирования уже выключен.'); return }
+  if (spawnEditor) { player.chat('Другой игрок уже редактирует спавны.'); return }
+  if (!['waiting', 'finished', 'error'].includes(rounds.phase)) {
+    player.chat('Дождись окончания матча.'); return
+  }
+  const pawn = player.pawn()
+  if (!pawn || (pawn.team !== 2 && pawn.team !== 3)) {
+    const hero = findHero('Bebop')
+    if (!hero || player.selectHero(hero.name, 2) === undefined) {
+      player.chat('Не удалось выдать Bebop. Выбери сторону и повтори /dev.'); return
+    }
+  } else if (pawn.health <= 0 && !player.respawn()) {
+    player.chat('Дождись возрождения и повтори /dev.'); return
+  }
+  leave(player)
+  spawnEditor = player
+  lobbyRetry.delete(player)
+  pickerEnabled.delete(player)
+  announce('Идёт редактирование спавнов. Следующая дуэль начнётся после выхода редактора.')
+  player.chat('/spawnclear — очистить пул, /spawnadd — сохранить точку, /dev off — в наблюдатели.')
+})
 onPlayerJoin((event) => rounds.forgetHud(event.connection.player))
 onPlayerLeave((event) => {
+  if (spawnEditor === event.connection.player) spawnEditor = undefined
   pickerEnabled.delete(event.connection.player)
   lobbyRetry.delete(event.connection.player)
   rounds.forgetHud(event.connection.player)
@@ -124,6 +157,7 @@ onPlayerLeave((event) => {
 })
 
 command('hookbot', (player) => {
+  if (spawnEditor === player) { player.chat('Сначала выйди из редактора: /dev off'); return }
   const pawn = player.pawn()
   if (!pawn || pawn.health <= 0 || (pawn.team !== 2 && pawn.team !== 3)
     || !player.abilities().some((ability) => ability.name === 'citadel_ability_hook')) {
@@ -164,7 +198,7 @@ command('removehookbot', (player) => {
 
 onFrame(({ timeSeconds }) => {
   for (const connection of players()) {
-    if (!connection.ready || connection.bot || seats.includes(connection.player)) continue
+    if (!connection.ready || connection.bot || connection.player === spawnEditor || seats.includes(connection.player)) continue
     const retry = lobbyRetry.get(connection.player)
     if (retry === Infinity) {
       const pawn = connection.player.pawn()
@@ -203,11 +237,11 @@ onFrame(({ timeSeconds }) => {
     if (!player.abilities().some(a => a.name === 'upgrade_warp_stone')) player.giveItem('upgrade_warp_stone')
     warpStoneGrants.set(player, { entity: pawn.entity, retryAt: timeSeconds + 1 })
   }
-  rounds.update(seats, timeSeconds)
+  if (!spawnEditor) rounds.update(seats, timeSeconds)
   for (const player of seats) {
     if (player) restrictCombat(player, timeSeconds, rounds.phase !== 'live')
   }
-  rounds.draw(players(), seats, scores, timeSeconds, joinSide, ready, leaveToSpectators)
+  rounds.draw(players(), seats, scores, timeSeconds, joinSide, ready, leaveToSpectators, spawnEditor)
   if (rounds.phase !== 'live') {
     for (let i = 0; i < 2; i++) {
       const ability = seats[i]?.abilities().find((a) => a.name === 'citadel_ability_hook')
@@ -303,6 +337,7 @@ command('help', (player) => {
     '/ready — готов; /unready — отменить готовность.',
     '/hookscore — счёт; /hookhud — обновить HUD; /help — команды.',
     '/hookbot — тренировка; /removehookbot — убрать бота.',
+    '/dev — редактировать спавны; /dev off — вернуться в наблюдатели.',
     '/spawnadd — записать позицию; /spawnclear — очистить точки.',
     '/resetarena — сброс матча; /testpoint [1|2] — тест очка; /hello — тест связи.',
   ]) player.chat(line)
@@ -332,11 +367,13 @@ command('resetarena', (player) => {
   announce(scoreText())
 })
 
-command('spawnadd', (player) => player.chat(`[Hook Arena] ${rounds.addSpawn(player)}`))
+command('spawnadd', (player) => {
+  if (spawnEditor && player !== spawnEditor) { player.chat('Спавны редактирует другой игрок.'); return }
+  player.chat(`[Hook Arena] ${rounds.addSpawn(player)}`)
+})
 command('spawnclear', (player) => {
-  if (seats.some((seat) => seat !== undefined)) {
-    player.chat('[Hook Arena] Remove the bot and /hookleave before clearing spawns.')
-    return
+  if (spawnEditor !== player && (spawnEditor || seats.some(Boolean))) {
+    player.chat('Для очистки точек войди в режим /dev между матчами.'); return
   }
   player.chat(rounds.clearSpawns() ? '[Hook Arena] Spawn pool cleared.' : '[Hook Arena] Could not save. Pool unchanged.')
 })

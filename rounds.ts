@@ -219,7 +219,7 @@ export class Rounds {
     this.lastHud.delete(player)
   }
 
-  draw(viewers: { player: Player; name: string; bot: boolean; ready: boolean }[], seats: (Player | undefined)[], scores: number[], now: number, joinSide: (player: Player, side: string) => void, ready: (player: Player, value: boolean) => void, leave: (player: Player) => void): void {
+  draw(viewers: { player: Player; name: string; bot: boolean; ready: boolean }[], seats: (Player | undefined)[], scores: number[], now: number, joinSide: (player: Player, side: string) => void, ready: (player: Player, value: boolean) => void, leave: (player: Player) => void, spawnEditor?: Player): void {
     const names = seats.map((p, i) => viewers.find((v) => v.player === p)?.name || `P${i + 1}: waiting`)
     const line = this.phase === 'waiting' ? seats.map((p, i) => `${names[i]}: ${!p ? 'EMPTY' : this.isReady(p) ? 'READY' : 'NOT READY'}`).join('\n')
       : this.phase === 'prepare' ? 'Preparing arena'
@@ -242,7 +242,7 @@ export class Rounds {
         this.forgetHud(viewer.player)
         continue
       }
-      const choosing = !seats.includes(viewer.player) && seats.some(seat => !seat)
+      const choosing = viewer.player !== spawnEditor && !seats.includes(viewer.player) && seats.some(seat => !seat)
         && ['waiting', 'finished', 'error'].includes(this.phase)
       const participant = seats.includes(viewer.player) && this.phase !== 'finished'
       const waiting = participant && this.phase === 'waiting'

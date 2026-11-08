@@ -64,3 +64,22 @@ tick(6); tick(7)
 assert.equal(viewers[3].player.team,1)
 assert.equal(viewers[3].player.cameraCalls,0)
 assert.equal(viewers[4].player.team,3)
+chat(3,'hookjoin','1')
+const editor = viewers[3].player
+let clears = 0
+context.duel.clearSpawns = () => { clears++; return true }
+chat(3,'dev')
+tick(8); tick(9)
+assert.equal(editor.team,2)
+chat(4,'spawnclear')
+assert.equal(clears,0)
+chat(3,'spawnclear')
+assert.equal(clears,1)
+context.duel.addSpawn = p => { assert.equal(p,editor); return 'Saved' }
+chat(3,'spawnadd')
+assert.ok(editor.messages.at(-1).includes('Saved'))
+chat(3,'dev','off')
+tick(10)
+assert.equal(editor.team,1)
+assert.equal(viewers[4].player.team,3)
+console.log('PASS: edit without spectating or autojoin, clear with second side occupied, return to lobby')
