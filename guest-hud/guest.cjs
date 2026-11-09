@@ -33,7 +33,8 @@ async function main() {
       fs.renameSync(tmp, config)
     }
     if (process.argv[3] === '--install-only') return
-    host = '138.16.184.175'
+    host = fs.readFileSync(path.join(__dirname, 'server.txt'), 'utf8').trim()
+    if (!/^[a-zA-Z0-9.-]+$/.test(host)) throw Error('server.txt must contain an IPv4 address or hostname.')
   } finally { prompt.close() }
   // Steam's active account, not a name or server slot that changes on reconnect.
   const active = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
@@ -78,11 +79,11 @@ async function main() {
     console.log('HUD ready. Keep this window open.')
     if (!process.argv.includes('--launch')) return
     const launcher = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
-      "Start-Process 'steam://run/1422450//+connect%20138.16.184.175:27067/'"],
+      "Start-Process 'steam://run/1422450//+connect%20" + host + ":27067/'"],
       { windowsHide: true, stdio: 'inherit' })
     launcher.on('error', err => console.error('Steam launch failed:', err.message))
     launcher.on('exit', code => {
-      if (code !== 0) console.error('Steam launch failed. Start Deadlock and connect to 138.16.184.175:27067 manually.')
+      if (code !== 0) console.error('Steam launch failed. Start Deadlock and connect to ' + host + ':27067 manually.')
     })
   })
 }
