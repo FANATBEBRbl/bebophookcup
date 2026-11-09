@@ -1,19 +1,42 @@
-import { hide, createEntity, fireInput, show, hideHud, trace, Layers, TopStrip, Score, jsx, type Player, type Vector, type Angles } from 'modlock'
+import { Action, freeCursor, readFile, writeFile, hide, createEntity, fireInput, show, hideHud, trace, Layers, TopStrip, Score, jsx, type Style, type Player, type Vector, type Angles } from 'modlock'
 import { countdown } from './countdown'
 
 type Spawn = { position: Vector; facing: Angles }
-const phrases = ['DAVAI BRATAN', 'OPA HU4OK', 'SVEZHEE MYASO', 'IDI SYUDA',
-  'LOVI PODAROK', 'NU VSE, PRIEHALI', 'BRATAN, NE PROMAHNIS', 'ETO MOI HU4OK']
+// Midway between the map's west (-96) and east (896) start markers.
+const bankDividerX = 400
+const spawnFile = 'bebop_arena_small.spawns.v1.json'
+function validSpawn(value: unknown): value is Spawn {
+  if (!value || typeof value !== 'object' || !('position' in value) || !('facing' in value)) return false
+  const { position, facing } = value as Spawn
+  return !!position && !!facing && [position.x, position.y, position.z,
+    facing.pitch, facing.yaw, facing.roll].every(Number.isFinite)
+}
+
+const phrases = [
+  'SV3ZH33 M9CO', 'DAVAI BRATAN', 'OPA HU4OK', 'GL HF PACANI',
+  'GO GO GO', 'RUSH B BRATVA', 'KTO KINUL DIM?', 'NE SIDI V DIME',
+  'V1HODI PO ODNOMU', 'LOVI PODAROK', 'TA6I BAT9', 'NU VSE, PRIEHALI',
+  'MINUS ODIN', 'BEZ ZAKUPA', 'P1NG 999', 'ETO VSE LAGI',
+  'ADMIN ON CHISTIY?', 'MAMOI KLYANUS', 'NA DEMKE VIDNO', 'GG BEZ OBID',
+]
+const cardStyle = { flow: 'down', padding: 16, background: '#0b0d09f2',
+  borderWidth: 1, borderColor: '#ffefd770', borderRadius: 12 } as const
+const headingStyle = { face: 'block', bold: true, uppercase: true, letterSpacing: 1,
+  fontSize: 18, color: '#ffefd7' } as const
+const buttonStyle: Style = { width: '100%', margin: [5, 0, 0, 0] }
 export class Rounds {
   phase: 'waiting' | 'prepare' | 'countdown' | 'live' | 'break' | 'finished' | 'error' = 'waiting'
   number = 1
   private deadline = 0
   private nextTry = 0
+  private pendingStoneRefresh = new Set<Player>()
+  private nextStoneCheck = 0
   private placed = [false, false]
   private spawns: Spawn[] = []
   private pool: Spawn[] = []
   private previousPair = ''
   private members: Player[] = []
+  private lobbyCursor = new Set<Player>()
   private lastHud = new Map<Player, string>()
   private hudText: number | undefined
   private displayedText = ''
@@ -45,23 +68,57 @@ export class Rounds {
 
   isReady(player: Player | undefined): boolean { return !!player && this.readyPlayers.has(player) }
 
+  private invalidSpawnFile = false
+
+  loadSpawns(): void {
+    this.previousPair = ''
+    this.pool = []
+    this.invalidSpawnFile = false
+    const text = readFile(spawnFile)
+    if (text === undefined) return
+    try {
+      const points: unknown = JSON.parse(text)
+      if (!Array.isArray(points) || points.length > 32 || !points.every(validSpawn)) throw Error('invalid spawn list')
+      this.pool = points
+      console.log('[Hook Arena] Loaded spawn points:', points.length)
+    } catch {
+      this.invalidSpawnFile = true
+      console.log('[Hook Arena] Invalid spawn file:', spawnFile)
+    }
+  }
+
+  private saveSpawns(points: Spawn[]): boolean {
+    if (!writeFile(spawnFile, JSON.stringify(points))) return false
+    this.pool = points
+    this.invalidSpawnFile = false
+    return true
+  }
+
   addSpawn(player: Player): string {
+    if (this.invalidSpawnFile) return 'Saved spawn file is damaged. Use /spawnclear to replace it.'
     const pawn = player.pawn()
     if (!pawn || pawn.health <= 0) return 'Stand at a safe spawn location while alive.'
     if (this.phase !== 'waiting' && this.phase !== 'error' && this.phase !== 'finished') return 'Leave the arena before editing spawn points.'
     if (this.pool.length >= 32) return 'Limit: 32 spawn points.'
     if (this.pool.some((s) => Math.hypot(s.position.x - pawn.position.x, s.position.y - pawn.position.y, s.position.z - pawn.position.z) < 100)) return 'Too close to an existing spawn.'
-    this.pool.push({ position: { ...pawn.position }, facing: { ...pawn.eyeAngles } })
-    return `Spawn ${this.pool.length} saved. Place at least 4, behind cover, 800+ units apart.`
+    const point = { position: { ...pawn.position }, facing: { ...pawn.eyeAngles } }
+    if (!validSpawn(point) || !this.saveSpawns([...this.pool, point])) return 'Could not save spawn. Pool unchanged.'
+    return `Spawn ${this.pool.length} saved. Place at least 4, on both banks, behind cover, 800+ units apart.`
   }
 
-  clearSpawns(): void { this.reset(); this.pool = []; this.previousPair = '' }
+  clearSpawns(): boolean {
+    if (!this.saveSpawns([])) return false
+    this.reset()
+    this.previousPair = ''
+    return true
+  }
 
   private choosePair(): boolean {
     if (this.pool.length < 4) return false
     const pairs: { a: number; b: number; key: string }[] = []
     for (let a = 0; a < this.pool.length; a++) for (let b = a + 1; b < this.pool.length; b++) {
       const p = this.pool[a].position, q = this.pool[b].position
+      if ((p.x - bankDividerX) * (q.x - bankDividerX) >= 0) continue
       if (Math.hypot(p.x - q.x, p.y - q.y) < 800) continue
       // Require actual static cover at two heights, not a player standing in the way.
       const covered = [40, 80].every((height) => {
@@ -76,13 +133,13 @@ export class Rounds {
     const choices = different.length ? different : pairs
     const pair = choices[Math.floor(Math.random() * choices.length)]
     this.previousPair = pair.key
-    this.spawns = Math.random() < 0.5 ? [this.pool[pair.a], this.pool[pair.b]] : [this.pool[pair.b], this.pool[pair.a]]
+    this.spawns = [this.pool[pair.a], this.pool[pair.b]].sort((west, east) => west.position.x - east.position.x)
     return true
   }
 
   reset(): void {
     this.readyPlayers.clear()
-    for (const player of this.members) { player.freeze(false); player.blockInput(0n) }
+    for (const player of this.members) player.blockInput(0n)
     this.members = []
     this.spawns = []
     this.phase = 'waiting'
@@ -95,7 +152,6 @@ export class Rounds {
     this.result = won ? `P${side} WINS THE MATCH` : `P${side} WINS ROUND ${this.number}`
     this.phase = won ? 'finished' : 'break'
     this.deadline = now + 2
-    for (const player of this.members) player.freeze(!won)
   }
 
   private prepare(now: number): void {
@@ -103,8 +159,7 @@ export class Rounds {
     this.phrase = choices[Math.floor(Math.random() * choices.length)]
     if (!this.choosePair()) {
       this.phase = 'error'
-      this.result = 'Need 4 /spawnadd points and a covered pair 800+ units apart; then /resetarena'
-      for (const player of this.members) player.freeze(false)
+      this.result = 'Save 4 spawns with /spawnadd. Place a covered pair on opposite banks at least 800 units apart, then use /resetarena.'
       return
     }
     this.phase = 'prepare'
@@ -136,7 +191,6 @@ export class Rounds {
       if (now > this.deadline) {
         this.phase = 'error'
         this.result = 'Preparation failed — /resetarena'
-        for (const player of this.members) player.freeze(false)
         return
       }
       if (now < this.nextTry) return
@@ -146,34 +200,41 @@ export class Rounds {
         const player = this.members[i]
         const pawn = player.pawn()
         if (!pawn) continue
-        if (pawn.health <= 0) { player.freeze(false); player.respawn(); continue }
+        if (pawn.health <= 0) { player.respawn(); continue }
         const spot = this.spawns[i]
-        if (!player.freeze(true)) continue
         if (!player.teleport(spot.position, spot.facing, { x: 0, y: 0, z: 0 })) continue
-        if (!player.refreshAbility('citadel_ability_hook')) continue
         this.placed[i] = true
       }
       if (this.placed.every(Boolean)) {
+        if (this.members.some(player => (player.pawn()?.maxStamina ?? 0) < 5)) return
+        for (const player of this.members) {
+          if (!player.setStamina(5)) return
+          if (!player.setAbility({ ability: 'citadel_ability_hook', cooldownEnd: now + 3 })) return
+        }
+        this.pendingStoneRefresh = new Set(this.members)
+        this.nextStoneCheck = now
         this.phase = 'countdown'
         this.deadline = now + 3
       }
     }
-    if (this.phase === 'countdown' && now >= this.deadline) {
-      const released = this.members.map((p) => p.freeze(false))
-      if (released.every(Boolean)) this.phase = 'live'
-      else {
-        this.phase = 'error'
-        this.result = 'Could not release players — /resetarena'
-        for (const player of this.members) player.freeze(false)
+    if (this.phase === 'countdown' && now >= this.nextStoneCheck) {
+      this.nextStoneCheck = now + 0.25
+      for (const player of this.pendingStoneRefresh) {
+        const stone = player.abilities().find(a => a.name === 'upgrade_warp_stone')
+        if (stone && player.refreshAbility(stone.name)) this.pendingStoneRefresh.delete(player)
       }
+    }
+    if (this.phase === 'countdown' && now >= this.deadline) {
+      this.phase = 'live'
     }
   }
 
   forgetHud(player: Player): void {
+    this.lobbyCursor.delete(player)
     this.lastHud.delete(player)
   }
 
-  draw(viewers: { player: Player; name: string; bot: boolean; ready: boolean }[], seats: (Player | undefined)[], scores: number[], now: number): void {
+  draw(viewers: { player: Player; name: string; bot: boolean; ready: boolean }[], seats: (Player | undefined)[], scores: number[], now: number, joinSide: (player: Player, side: string) => void, ready: (player: Player, value: boolean) => void, leave: (player: Player) => void, spawnEditor?: Player): void {
     const names = seats.map((p, i) => viewers.find((v) => v.player === p)?.name || `P${i + 1}: waiting`)
     const line = this.phase === 'waiting' ? seats.map((p, i) => `${names[i]}: ${!p ? 'EMPTY' : this.isReady(p) ? 'READY' : 'NOT READY'}`).join('\n')
       : this.phase === 'prepare' ? 'Preparing arena'
@@ -196,7 +257,13 @@ export class Rounds {
         this.forgetHud(viewer.player)
         continue
       }
-      if (this.lastHud.get(viewer.player) === key) continue
+      const choosing = viewer.player !== spawnEditor && !seats.includes(viewer.player) && seats.some(seat => !seat)
+        && ['waiting', 'finished', 'error'].includes(this.phase)
+      const participant = seats.includes(viewer.player) && this.phase !== 'finished'
+      const waiting = participant && this.phase === 'waiting'
+      const useCursor = choosing || waiting || (participant && this.phase === 'error')
+      const viewerKey = key + ':' + choosing + ':' + seats.map(p => p?.slot ?? '-').join(',')
+      if (this.lastHud.get(viewer.player) === viewerKey) continue
       const firstDraw = !this.lastHud.has(viewer.player)
       if (firstDraw) hide(viewer.player) // Clear the SDK's slot cache before the first full redraw.
       const ui = [TopStrip({ heading: `HOOK ARENA | ROUND ${this.number} | FIRST TO 10`,
@@ -208,19 +275,42 @@ export class Rounds {
       }
       if (this.phase === 'break' || this.phase === 'finished' || this.phase === 'error' || this.phase === 'waiting') {
         const title = this.phase === 'waiting' ? 'READY CHECK' : this.phase === 'error' ? 'ARENA SETUP' : this.result
-        const detail = this.phase === 'finished' ? '/resetarena for a rematch'
-          : this.phase === 'break' ? `Next: round ${this.number + 1}` : line + (this.phase === 'waiting' ? '\n!ready / !unready' : '')
+        const detail = this.phase === 'finished' ? `Final score: ${scores[0]} : ${scores[1]}`
+          : this.phase === 'break' ? `Next: round ${this.number + 1}` : line
         ui.push(jsx('panel', {
-          children: [jsx('label', { children: title, style: { width: '100%', fontSize: 24, face: 'body', bold: true, color: '#f5c775', textOverflow: 'shrink' } }),
-            jsx('label', { children: detail, style: { width: '100%', fontSize: 18, face: 'body', color: '#eee8db', margin: [10, 0, 0, 0] } })],
+          children: [jsx('label', { children: title, style: { width: '100%', ...headingStyle, textOverflow: 'shrink' } }),
+            jsx('label', { children: detail, style: { width: '100%', fontSize: 18, face: 'body', color: '#bfb3a1', margin: [10, 0, 0, 0] } })],
           style: { horizontalAlign: 'right', verticalAlign: 'bottom', margin: [0, 28, 32, 0],
-            width: 360, flow: 'down', padding: 20, background: '#101820ee',
-            borderRadius: 12 },
+            width: 360, ...cardStyle },
         }))
       }
-      const hidden = hideHud(viewer.player, ['topBar', 'ownHealth', 'minimap', 'ammo'])
+      if (useCursor) {
+        const isReady = this.isReady(viewer.player)
+        const actions = choosing ? [0, 1].map(i => Action({
+          style: buttonStyle, disabled: !!seats[i], children: seats[i] ? `P${i + 1} · Taken` : `Join P${i + 1}`,
+          onPress: actor => { if (!seats[i] && actor === viewer.player && !seats.includes(actor)) joinSide(actor, String(i + 1)) },
+        })) : [
+          ...(waiting ? [Action({ style: buttonStyle, kind: 'primary', children: isReady ? 'Cancel Ready' : 'Ready',
+            onPress: actor => { if (actor === viewer.player && this.phase === 'waiting' && seats.includes(actor)) ready(actor, !isReady) },
+          })] : []),
+          Action({ style: buttonStyle, kind: 'quiet', children: 'Spectate',
+            onPress: actor => { if (actor === viewer.player && seats.includes(actor)) leave(actor) },
+          }),
+        ]
+        ui.push(jsx('panel', {
+          style: { horizontalAlign: 'left', verticalAlign: 'bottom', margin: [0, 0, 32, 28],
+            width: 260, ...cardStyle },
+          children: [jsx('label', { children: choosing ? 'Join Duel' : 'Duel', style: headingStyle }), ...actions],
+        }))
+      }
+      const hidden = hideHud(viewer.player, ['topBar', 'ownHealth', 'minimap', 'ammo', 'stats', 'souls', 'levelUp'])
       if (show(viewer.player, ui) && hidden) {
-        this.lastHud.set(viewer.player, key)
+        if (firstDraw || useCursor !== this.lobbyCursor.has(viewer.player)) {
+          if (!freeCursor(viewer.player, useCursor)) continue
+          if (useCursor) this.lobbyCursor.add(viewer.player)
+          else this.lobbyCursor.delete(viewer.player)
+        }
+        this.lastHud.set(viewer.player, viewerKey)
         if (firstDraw) console.log('[Hook Arena] Full HUD accepted for slot', viewer.player.slot)
       }
     }

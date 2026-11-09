@@ -4,6 +4,10 @@ const net = require('node:net')
 const path = require('node:path')
 const { spawn, spawnSync } = require('node:child_process')
 const { setTimeout: delay } = require('node:timers/promises')
+const { createInterface } = require('node:readline')
+const { HudFeed } = require('./hud-feed.cjs')
+const hud = new HudFeed()
+const { createJournal } = require('./journal.cjs')
 
 const repo = path.resolve(__dirname, '..')
 const base = process.env.BEBOP_SERVER || 'C:\\BebopServer'
@@ -12,6 +16,13 @@ const game = process.env.DEADLOCK_DIR || path.join(process.env['ProgramFiles(x86
 const map = 'bebop_arena_small.vpk'
 const state = path.join(base, 'releases')
 const checkpoint = path.join(state, 'active.txt')
+const journal = createJournal(path.join(base, 'logs'))
+for (const level of ['log', 'error']) {
+  const original = console[level].bind(console)
+  console[level] = (...args) => { journal(level, args.map(String).join(' ')); original(...args) }
+}
+const pinned = process.env.BEBOP_REF
+journal('updater-start', { node: process.version, repo, game, pinned: pinned || 'origin/dev' })
 let running
 let closing = false
 
@@ -27,6 +38,7 @@ function stop() {
     spawnSync('taskkill', ['/PID', String(running.pid), '/T', '/F'], { windowsHide: true })
   }
   running = undefined
+  hud.reset()
 }
 
 function prepare(id) {
@@ -45,22 +57,31 @@ async function launch(id) {
   const temp = path.join(dest, map + '.deploy.tmp')
   fs.copyFileSync(path.join(dir, 'maps', map), temp)
   fs.renameSync(temp, path.join(dest, map))
-  const p = spawn(cli, ['play', '--no-game', '--watch=false', dir], {
+  const p = spawn(cli, ['--json', 'play', '--no-game', '--watch=false', dir], {
     cwd: base, env: { ...process.env, DEADLOCK_DIR: game }, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true
   })
   running = p
+  journal('launch', { commit: id, pid: p.pid })
   await new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(Error('Arena readiness timeout')), 90000)
     let tail = ''
     function output(chunk) {
+      journal('host', String(chunk))
       process.stdout.write(chunk)
       tail = (tail + chunk).slice(-4096)
       if (/server ready on bebop_arena_small/i.test(tail)) { clearTimeout(timer); resolve() }
     }
-    p.stdout.on('data', output)
+    createInterface({ input: p.stdout }).on('line', line => {
+      try {
+        const event = JSON.parse(line)
+        hud.handle(event)
+        if (event.host?.ready?.map === 'bebop_arena_small') { clearTimeout(timer); resolve() }
+        if (!event.host?.ui) output(line + '\n')
+      } catch (err) { journal('raw-or-rejected-event', { line, error: err.message }); process.stdout.write(line + '\n') }
+    })
     p.stderr.on('data', output)
     p.once('error', err => { clearTimeout(timer); reject(err) })
-    p.once('exit', code => { clearTimeout(timer); reject(Error('Modlock exited: ' + code)) })
+    p.once('exit', (code, signal) => { journal('process-exit', { commit: id, code, signal, stopping: closing }); if (running === p) hud.reset(); clearTimeout(timer); reject(Error('Modlock exited: ' + code)) })
   })
 }
 
@@ -69,6 +90,7 @@ async function main() {
   fs.accessSync(path.join(game, 'game', 'citadel', 'gameinfo.gi'))
   fs.mkdirSync(state, { recursive: true })
   let active = fs.existsSync(checkpoint) ? fs.readFileSync(checkpoint, 'utf8').trim() : ''
+  if (pinned) active = '' // Build the selected release, including after an offline restore.
   let rejected = ''
   while (!closing) {
     try {
@@ -76,8 +98,8 @@ async function main() {
         stop()
         try { await launch(active) } catch (err) { stop(); throw err }
       }
-      run('git', ['fetch', 'origin', '+refs/heads/dev:refs/remotes/origin/dev'])
-      const id = run('git', ['rev-parse', 'refs/remotes/origin/dev'])
+      if (!pinned) run('git', ['fetch', 'origin', '+refs/heads/dev:refs/remotes/origin/dev'])
+      const id = run('git', ['rev-parse', '--verify', (pinned || 'refs/remotes/origin/dev') + '^{commit}'])
       if (id !== active && id !== rejected) {
         console.log('Preparing ' + id)
         try {
@@ -104,5 +126,12 @@ process.once('SIGINT', () => { closing = true; stop(); process.exit(0) })
 const lock = net.createServer(socket => socket.end())
 lock.once('error', err => { console.error('Cannot start updater:', err.message); process.exitCode = 1 })
 lock.listen('\\\\.\\pipe\\bebop-cup-updater', () => {
-  main().catch(err => { console.error(err.message); stop(); lock.close(); process.exitCode = 1 })
+  const hudServer = hud.serve()
+  hudServer.once('error', err => {
+    console.error('HUD port 4321 unavailable. Stop the old share.cjs service first:', err.message)
+    stop(); process.exit(1)
+  })
+  hudServer.once('listening', () => {
+    main().catch(err => { console.error(err.message); stop(); hudServer.close(); lock.close(); process.exitCode = 1 })
+  })
 })

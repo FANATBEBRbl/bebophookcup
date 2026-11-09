@@ -13,3 +13,19 @@ for(let slot=0;slot<4;slot++){
 }
 console.log('PASS: fire/melee/other skills blocked, actual hook slot allowed, cooldown 3s, full upgrades enforced');
 
+const changes = []
+const abilities = [{name:'citadel_ability_hook', slot:2, upgrades:15},
+  {name:'another_skill',slot:1,upgrades:7},{name:'upgrade_warp_stone',slot:4,upgrades:1}]
+c.run({abilities:()=>abilities,blockInput(){},setAbility:opts=>changes.push(opts)},100)
+assert.equal(changes.length,1)
+assert.equal(changes[0].ability,'another_skill')
+assert.equal(changes[0].upgrades,0)
+
+// Parry remains blocked even if an existing hero still carries Counterspell.
+for (const locked of [false, true]) {
+  let blocked = 0n
+  c.run({abilities:()=>[{name:'upgrade_counterspell',slot:5,upgrades:1}],
+    blockInput:mask=>{blocked=mask},setAbility(){throw Error('Unexpected item mutation')}},100,locked)
+  assert.notEqual(blocked & Buttons.parry,0n)
+}
+console.log('PASS: parry always blocked, including heroes carrying Counterspell')

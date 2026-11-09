@@ -1,4 +1,4 @@
-import { command, onChat, onWorld, onFrame, onPlayerJoin, onPlayerLeave, players, readField, killEntity, addBot, findHero, type Player } from 'modlock'
+import { command, onWorld, onFrame, onPlayerJoin, onPlayerLeave, players, findEntities, entityPosition, fireInput, readField, killEntity, addBot, findHero, type Player } from 'modlock'
 import { set as setServerVariable } from 'modlock/console'
 import { Rounds } from './rounds'
 import { restrictCombat } from './combat'
@@ -10,7 +10,12 @@ const target = 10
 let scores = [0, 0]
 let winner = 0
 const seats: (Player | undefined)[] = [undefined, undefined]
-const warpStoneGrants = new Map<Player, { entity: number; retryAt: number }>()
+const loadoutChecks = new Map<Player, { entity: number; retryAt: number }>()
+// Positions of the two info_team_spawn markers in bebop_arena_small.
+const eastSpawn = { x: 896, y: -864, z: 100 }
+let spawnEditor: Player | undefined
+const pickerEnabled = new Set<Player>()
+const lobbyRetry = new Map<Player, number>()
 const caught: (number | undefined)[] = [undefined, undefined]
 let practiceBot: Player | undefined
 let pending: { side: number; victim: Player; entity: number; until: number } | undefined
@@ -40,10 +45,20 @@ onWorld(() => {
   console.log('[Hook Arena] sv_cheats=1 request accepted:', setServerVariable('sv_cheats', true))
   console.log('[Hook Arena] Allow duplicate heroes:', setServerVariable('citadel_allow_duplicate_heroes', true))
   reset()
-  rounds.clearSpawns()
+  for (const entity of findEntities('info_team_spawn')) {
+    const p = entityPosition(entity)?.position
+    if (p && Math.hypot(p.x - eastSpawn.x, p.y - eastSpawn.y, p.z - eastSpawn.z) < 1) {
+      console.log('[Hook Arena] Assign east spawn to team 3:', fireInput(entity, 'SetTeam', { integer: 3 }))
+    }
+  }
+  rounds.loadSpawns()
   rounds.startMapHud()
   seats.fill(undefined)
-  warpStoneGrants.clear()
+  loadoutChecks.clear()
+  lobbyRetry.clear()
+  pickerEnabled.clear()
+  spawnEditor = undefined
+  setServerVariable('citadel_server_max_spectator_slots', 8)
   caught.fill(undefined)
   practiceBot = undefined
 })
@@ -54,7 +69,9 @@ function point(side: number): void {
   if (scores[side - 1] >= target) winner = side
 }
 
-command('hookjoin', (player, args) => {
+function joinSide(player: Player, args: string): void {
+  if (spawnEditor === player) { player.chat('Leave the spawn editor first with /dev off'); return }
+  console.log('[Hook Arena] hookjoin received, slot', player.slot, 'side', args.slice(0, 8))
   const index = args === '1' ? 0 : args === '2' ? 1 : -1
   if (index < 0) { player.chat('Usage: /hookjoin 1 or /hookjoin 2'); return }
   if (seats[index] && seats[index] !== player) {
@@ -62,16 +79,32 @@ command('hookjoin', (player, args) => {
     return
   }
   if (seats[index] === player) { player.chat(`[Hook Arena] You are P${index + 1}`); return }
+  if (!['waiting', 'finished', 'error'].includes(rounds.phase)) {
+    player.chat('Wait for the match to end or use /hookleave.')
+    return
+  }
+  const hero = findHero('Bebop')
+  if (!hero || player.selectHero(hero.name, index + 2) === undefined) {
+    console.log('[Hook Arena] selecting Bebop failed, slot', player.slot, 'team', index + 2)
+    player.chat('Could not select Bebop. Try /hookjoin again in a moment.')
+    return
+  }
+  occupySide(player, index)
+}
+command('hookjoin', joinSide)
+
+function occupySide(player: Player, index: number): void {
+  lobbyRetry.delete(player)
   const previous = seats.indexOf(player)
   if (previous >= 0) seats[previous] = undefined
   seats[index] = player
   reset()
   caught.fill(undefined)
-  announce(`[Hook Arena] Player slot ${player.slot} joined P${index + 1}. Score reset. Both sides must join; use Bebop on opposing teams.`)
-})
+  announce(`[Hook Arena] Player slot ${player.slot} joined P${index + 1}. Select Ready when Bebop appears.`)
+}
 
 function leave(player: Player): void {
-  warpStoneGrants.delete(player)
+  loadoutChecks.delete(player)
   player.blockInput(0n)
   const index = seats.indexOf(player)
   if (index < 0) return
@@ -80,14 +113,51 @@ function leave(player: Player): void {
   caught.fill(undefined)
   announce('[Hook Arena] Participant left. Hooks paused; score reset.')
 }
-command('hookleave', (player) => leave(player))
+function leaveToSpectators(player: Player): void {
+  if (spawnEditor === player) spawnEditor = undefined
+  leave(player)
+  lobbyRetry.set(player, 0)
+}
+command('hookleave', leaveToSpectators)
+command('dev', (player, args) => {
+  if (args !== '' && args !== 'off') { player.chat('Use /dev or /dev off.'); return }
+  if (spawnEditor === player) {
+    leaveToSpectators(player)
+    announce('Spawn editing finished.')
+    return
+  }
+  if (args === 'off') { player.chat('Spawn editing is already off.'); return }
+  if (spawnEditor) { player.chat('Another player is editing spawns.'); return }
+  if (!['waiting', 'finished', 'error'].includes(rounds.phase)) {
+    player.chat('Wait for the match to finish.'); return
+  }
+  const pawn = player.pawn()
+  if (!pawn || (pawn.team !== 2 && pawn.team !== 3)) {
+    const hero = findHero('Bebop')
+    if (!hero || player.selectHero(hero.name, 2) === undefined) {
+      player.chat('Could not select Bebop. Pick a side and try /dev again.'); return
+    }
+  } else if (pawn.health <= 0 && !player.respawn()) {
+    player.chat('Wait for your respawn, then try /dev again.'); return
+  }
+  leave(player)
+  spawnEditor = player
+  lobbyRetry.delete(player)
+  pickerEnabled.delete(player)
+  announce('Spawn editing in progress. The next duel will start when the editor leaves.')
+  player.chat('/spawnclear clears all points. /spawnadd saves your position. /dev off returns you to spectators.')
+})
 onPlayerJoin((event) => rounds.forgetHud(event.connection.player))
 onPlayerLeave((event) => {
+  if (spawnEditor === event.connection.player) spawnEditor = undefined
+  pickerEnabled.delete(event.connection.player)
+  lobbyRetry.delete(event.connection.player)
   rounds.forgetHud(event.connection.player)
   leave(event.connection.player)
 })
 
 command('hookbot', (player) => {
+  if (spawnEditor === player) { player.chat('Leave the spawn editor first with /dev off'); return }
   const pawn = player.pawn()
   if (!pawn || pawn.health <= 0 || (pawn.team !== 2 && pawn.team !== 3)
     || !player.abilities().some((ability) => ability.name === 'citadel_ability_hook')) {
@@ -114,7 +184,7 @@ command('hookbot', (player) => {
   seats[1] = bot
   reset()
   caught.fill(undefined)
-  announce('[Hook Arena] You are P1; bot is ready as P2. Type !ready to start.')
+  announce('[Hook Arena] You are P1; bot is ready as P2. Type /ready to start.')
 })
 
 command('removehookbot', (player) => {
@@ -127,21 +197,55 @@ command('removehookbot', (player) => {
 })
 
 onFrame(({ timeSeconds }) => {
+  for (const connection of players()) {
+    if (!connection.ready || connection.bot || connection.player === spawnEditor || seats.includes(connection.player)) continue
+    const retry = lobbyRetry.get(connection.player)
+    if (retry === Infinity) {
+      const pawn = connection.player.pawn()
+      if (!pawn || (pawn.team !== 2 && pawn.team !== 3)) {
+        pickerEnabled.add(connection.player)
+        continue
+      }
+      if (!pickerEnabled.has(connection.player) || pawn.health <= 0) continue
+      const index = pawn.team - 2
+      if (!connection.player.abilities().some(a => a.name === 'citadel_ability_hook')) continue
+      if (!seats[index] && ['waiting', 'error', 'finished'].includes(rounds.phase)) {
+        occupySide(connection.player, index)
+        continue
+      }
+      connection.player.chat('That side is taken. Choose an open side.')
+      lobbyRetry.set(connection.player, 0)
+    } else if (retry !== undefined && timeSeconds < retry) continue
+    pickerEnabled.delete(connection.player)
+    const entered = connection.player.spectate()
+    lobbyRetry.set(connection.player, entered ? Infinity : timeSeconds + 1)
+    if (entered) connection.player.chat('You are spectating. Select P1 or P2, then Ready.')
+  }
   for (const player of seats) {
     if (!player) continue
-    restrictCombat(player, timeSeconds)
     const pawn = player.pawn()
     if (!pawn || pawn.health <= 0) {
-      warpStoneGrants.delete(player)
+      loadoutChecks.delete(player)
       continue
     }
-    const grant = warpStoneGrants.get(player)
+    // The engine can select a fallback origin before the first round placement.
+    if (rounds.phase === 'waiting' && pawn.team === 3 && Math.hypot(pawn.position.x, pawn.position.y) < 64 && pawn.position.z < 32) {
+      player.teleport(eastSpawn, { pitch: 0, yaw: 180, roll: 0 }, { x: 0, y: 0, z: 0 })
+    }
+    const grant = loadoutChecks.get(player)
     if (grant?.entity === pawn.entity && timeSeconds < grant.retryAt) continue
-    const granted = player.giveItem('upgrade_warp_stone')
-    warpStoneGrants.set(player, { entity: pawn.entity, retryAt: granted ? Infinity : timeSeconds + 1 })
+    const abilities = player.abilities()
+    if (pawn.maxStamina !== undefined && pawn.maxStamina < 5 && !abilities.some(a => a.name === 'upgrade_superior_stamina')) {
+      player.giveItem('upgrade_superior_stamina')
+    }
+    if (!abilities.some(a => a.name === 'upgrade_warp_stone')) player.giveItem('upgrade_warp_stone')
+    loadoutChecks.set(player, { entity: pawn.entity, retryAt: timeSeconds + 1 })
   }
-  rounds.update(seats, timeSeconds)
-  rounds.draw(players(), seats, scores, timeSeconds)
+  if (!spawnEditor) rounds.update(seats, timeSeconds)
+  for (const player of seats) {
+    if (player) restrictCombat(player, timeSeconds, rounds.phase !== 'live')
+  }
+  rounds.draw(players(), seats, scores, timeSeconds, joinSide, ready, leaveToSpectators, spawnEditor)
   if (rounds.phase !== 'live') {
     for (let i = 0; i < 2; i++) {
       const ability = seats[i]?.abilities().find((a) => a.name === 'citadel_ability_hook')
@@ -153,9 +257,21 @@ onFrame(({ timeSeconds }) => {
   if (pending) {
     const pawn = pending.victim.pawn()
     if (pawn && pawn.entity === pending.entity && pawn.health <= 0) {
+      if (scores[pending.side - 1] + 1 >= target) seats[pending.side - 1]?.sound('Music.Match.Win')
       point(pending.side)
       rounds.end(pending.side, winner !== 0, timeSeconds)
       announce(`[HOOK +1 P${pending.side}] ${scoreText()}`)
+      if (winner) {
+        for (const player of seats) {
+          if (!player) continue
+          player.blockInput(0n)
+          loadoutChecks.delete(player)
+          if (player === practiceBot) { player.removeBot(); practiceBot = undefined }
+          else lobbyRetry.set(player, 0)
+        }
+        seats.fill(undefined)
+        announce('Match over. Select an open side to play the next duel.')
+      }
       pending = undefined
     } else if (timeSeconds >= pending.until || (pawn && pawn.entity !== pending.entity)) {
       announce('[Hook Arena] Death not confirmed; no point awarded.')
@@ -219,11 +335,16 @@ function ready(player: Player, value: boolean): void {
 }
 command('ready', (player) => ready(player, true))
 command('unready', (player) => ready(player, false))
-// Modlock's command prefix parser does not promise support for !.
-onChat(({ player, text }) => {
-  const message = text.trim().toLowerCase()
-  if (message === '!ready') ready(player, true)
-  else if (message === '!unready') ready(player, false)
+command('help', (player) => {
+  for (const line of [
+    '/hookjoin 1 or /hookjoin 2: join a side as Bebop. /hookleave: spectate.',
+    '/ready: ready up. /unready: cancel.',
+    '/hookscore: score. /hookhud: refresh HUD. /help: commands.',
+    '/hookbot: practice. /removehookbot: remove practice bot.',
+    '/dev: edit spawns. /dev off: return to spectators.',
+    '/spawnadd: save a spawn. /spawnclear: clear spawns.',
+    '/resetarena: reset match. /testpoint [1|2]: test scoring. /hello: test connection.',
+  ]) player.chat(line)
 })
 
 command('testpoint', (player, args) => {
@@ -244,17 +365,19 @@ command('testpoint', (player, args) => {
   announce(`[TEST +1 P${side}] ${scoreText()}`)
 })
 
-command('resetarena', () => {
+command('resetarena', (player) => {
+  if (seats.some(Boolean) && !seats.includes(player)) { player.chat('Only duelists can reset an occupied arena.'); return }
   reset()
   announce(scoreText())
 })
 
-command('spawnadd', (player) => player.chat(`[Hook Arena] ${rounds.addSpawn(player)}`))
+command('spawnadd', (player) => {
+  if (spawnEditor && player !== spawnEditor) { player.chat('Another player is editing spawns.'); return }
+  player.chat(`[Hook Arena] ${rounds.addSpawn(player)}`)
+})
 command('spawnclear', (player) => {
-  if (seats.some((seat) => seat !== undefined)) {
-    player.chat('[Hook Arena] Remove the bot and /hookleave before clearing spawns.')
-    return
+  if (spawnEditor !== player && (spawnEditor || seats.some(Boolean))) {
+    player.chat('Enter /dev between matches to clear spawn points.'); return
   }
-  rounds.clearSpawns()
-  player.chat('[Hook Arena] Spawn pool cleared.')
+  player.chat(rounds.clearSpawns() ? '[Hook Arena] Spawn pool cleared.' : '[Hook Arena] Could not save. Pool unchanged.')
 })
