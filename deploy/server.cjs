@@ -57,7 +57,7 @@ async function launch(id) {
   const temp = path.join(dest, map + '.deploy.tmp')
   fs.copyFileSync(path.join(dir, 'maps', map), temp)
   fs.renameSync(temp, path.join(dest, map))
-  const p = spawn(cli, ['--json', 'play', '--no-game', '--watch=false', dir], {
+  const p = spawn(cli, ['--json', 'play', '--no-game', '--ui-port=0', '--watch=false', dir], {
     cwd: base, env: { ...process.env, DEADLOCK_DIR: game }, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true
   })
   running = p
