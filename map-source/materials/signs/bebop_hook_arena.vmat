@@ -1,0 +1,70 @@
+// THIS FILE IS AUTO-GENERATED
+
+Layer0
+{
+	shader "pbr.vfx"
+
+	//---- Color ----
+	g_bApplyTintToVertexColors "0"
+	g_bMaskColorTint1 "1"
+	g_bMaskVertexColorTint1 "1"
+	g_flAlbedoScrollQuantize1 "0.000"
+	g_fVertexColorStrength1 "1.000"
+	g_nTextureColorTintMode1 "0" // Multiply
+	g_vAlbedoContrastSaturationBrightness1 "[1.000 1.000 1.000]"
+	g_vAlbedoScrollSpeed1 "[0.000 0.000]"
+	g_vColorTint1 "[1.000000 1.000000 1.000000 0.000000]"
+	TextureColor1 "materials/signs/bebop_hook_arena.png"
+	TextureTintMask1 "materials/default/default_mask.tga"
+
+	//---- Metalness ----
+	TextureMetalness1 "materials/default/default_metal.tga"
+
+	//---- Normal and Roughness ----
+	g_flNormalAndRoughnessScrollQuantize1 "0.000"
+	g_vNormalAndRoughnessScrollSpeed1 "[0.000 0.000]"
+	TextureNormal1 "materials/default/default_normal.tga"
+	TextureRoughness1 "materials/default/default_rough.tga"
+
+	//---- Occlusion ----
+	g_bAcceptSsao "1"
+
+	//---- Rendering ----
+	g_bCustomHolePunch "0"
+
+	//---- Texture Coordinates ----
+	g_nScaleTexCoord2UByModelScaleAxis "0" // None
+	g_nScaleTexCoord2UByModelScaleOrigin "0" // Left
+	g_nScaleTexCoord2VByModelScaleAxis "0" // None
+	g_nScaleTexCoord2VByModelScaleOrigin "2" // Bottom
+	g_nScaleTexCoordUByModelScaleAxis "0" // None
+	g_nScaleTexCoordUByModelScaleOrigin "0" // Left
+	g_nScaleTexCoordVByModelScaleAxis "0" // None
+	g_nScaleTexCoordVByModelScaleOrigin "2" // Bottom
+
+
+	VariableState
+	{
+		"Color"
+		{
+			"Uvs" 0
+		}
+		"Metalness"
+		{
+		}
+		"Normal and Roughness"
+		{
+			"UVs" 0
+		}
+		"Occlusion"
+		{
+		}
+		"Rendering"
+		{
+		}
+		"Texture Coordinates"
+		{
+			"Scale" 0
+		}
+	}
+}

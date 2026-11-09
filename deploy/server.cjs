@@ -7,6 +7,7 @@ const { setTimeout: delay } = require('node:timers/promises')
 const { createInterface } = require('node:readline')
 const { HudFeed } = require('./hud-feed.cjs')
 const hud = new HudFeed()
+const { createJournal } = require('./journal.cjs')
 
 const repo = path.resolve(__dirname, '..')
 const base = process.env.BEBOP_SERVER || 'C:\\BebopServer'
@@ -15,6 +16,13 @@ const game = process.env.DEADLOCK_DIR || path.join(process.env['ProgramFiles(x86
 const map = 'bebop_arena_small.vpk'
 const state = path.join(base, 'releases')
 const checkpoint = path.join(state, 'active.txt')
+const journal = createJournal(path.join(base, 'logs'))
+for (const level of ['log', 'error']) {
+  const original = console[level].bind(console)
+  console[level] = (...args) => { journal(level, args.map(String).join(' ')); original(...args) }
+}
+const pinned = process.env.BEBOP_REF
+journal('updater-start', { node: process.version, repo, game, pinned: pinned || 'origin/dev' })
 let running
 let closing = false
 
@@ -53,10 +61,12 @@ async function launch(id) {
     cwd: base, env: { ...process.env, DEADLOCK_DIR: game }, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true
   })
   running = p
+  journal('launch', { commit: id, pid: p.pid })
   await new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(Error('Arena readiness timeout')), 90000)
     let tail = ''
     function output(chunk) {
+      journal('host', String(chunk))
       process.stdout.write(chunk)
       tail = (tail + chunk).slice(-4096)
       if (/server ready on bebop_arena_small/i.test(tail)) { clearTimeout(timer); resolve() }
@@ -67,11 +77,11 @@ async function launch(id) {
         hud.handle(event)
         if (event.host?.ready?.map === 'bebop_arena_small') { clearTimeout(timer); resolve() }
         if (!event.host?.ui) output(line + '\n')
-      } catch (err) { console.error('HUD event rejected:', err.message) }
+      } catch (err) { journal('raw-or-rejected-event', { line, error: err.message }); process.stdout.write(line + '\n') }
     })
     p.stderr.on('data', output)
     p.once('error', err => { clearTimeout(timer); reject(err) })
-    p.once('exit', code => { if (running === p) hud.reset(); clearTimeout(timer); reject(Error('Modlock exited: ' + code)) })
+    p.once('exit', (code, signal) => { journal('process-exit', { commit: id, code, signal, stopping: closing }); if (running === p) hud.reset(); clearTimeout(timer); reject(Error('Modlock exited: ' + code)) })
   })
 }
 
@@ -80,6 +90,7 @@ async function main() {
   fs.accessSync(path.join(game, 'game', 'citadel', 'gameinfo.gi'))
   fs.mkdirSync(state, { recursive: true })
   let active = fs.existsSync(checkpoint) ? fs.readFileSync(checkpoint, 'utf8').trim() : ''
+  if (pinned) active = '' // Build the selected release, including after an offline restore.
   let rejected = ''
   while (!closing) {
     try {
@@ -87,8 +98,8 @@ async function main() {
         stop()
         try { await launch(active) } catch (err) { stop(); throw err }
       }
-      run('git', ['fetch', 'origin', '+refs/heads/dev:refs/remotes/origin/dev'])
-      const id = run('git', ['rev-parse', 'refs/remotes/origin/dev'])
+      if (!pinned) run('git', ['fetch', 'origin', '+refs/heads/dev:refs/remotes/origin/dev'])
+      const id = run('git', ['rev-parse', '--verify', (pinned || 'refs/remotes/origin/dev') + '^{commit}'])
       if (id !== active && id !== rejected) {
         console.log('Preparing ' + id)
         try {
