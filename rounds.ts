@@ -5,6 +5,15 @@ type Spawn = { position: Vector; facing: Angles }
 // Midway between the map's west (-96) and east (896) start markers.
 const bankDividerX = 400
 const spawnFile = 'bebop_arena_small.spawns.v1.json'
+// Positions captured on bebop_arena_small. An explicitly cleared or edited pool takes precedence.
+const mapSpawns: Spawn[] = [
+  { position: { x: -398.3125, y: 47.1875, z: 102.53125 }, facing: { pitch: 18.173778533935547, yaw: -7.757110595703125, roll: 0 } },
+  { position: { x: -319.6875, y: -1071.0625, z: 112.71875 }, facing: { pitch: 0.7338351607322693, yaw: 2.8638415336608887, roll: 0 } },
+  { position: { x: -420.3125, y: -1866.375, z: 268.53125 }, facing: { pitch: 5.613525390625, yaw: 20.018062591552734, roll: 0 } },
+  { position: { x: 1323.59375, y: -1818.71875, z: 102.5625 }, facing: { pitch: 1.3914108276367188, yaw: 166.71331787109375, roll: 0 } },
+  { position: { x: 1363.4375, y: -800, z: 107.53125 }, facing: { pitch: 4.016790866851807, yaw: -172.22698974609375, roll: 0 } },
+  { position: { x: 1379.1875, y: 111.625, z: 268.5 }, facing: { pitch: 4.650529384613037, yaw: -152.88912963867188, roll: 0 } },
+]
 function validSpawn(value: unknown): value is Spawn {
   if (!value || typeof value !== 'object' || !('position' in value) || !('facing' in value)) return false
   const { position, facing } = value as Spawn
@@ -75,7 +84,10 @@ export class Rounds {
     this.pool = []
     this.invalidSpawnFile = false
     const text = readFile(spawnFile)
-    if (text === undefined) return
+    if (text === undefined) {
+      this.pool = [...mapSpawns]
+      return
+    }
     try {
       const points: unknown = JSON.parse(text)
       if (!Array.isArray(points) || points.length > 32 || !points.every(validSpawn)) throw Error('invalid spawn list')

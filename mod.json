@@ -1,6 +1,6 @@
 {
-  "slug": "bebop-cup",
-  "name": "Bebop Cup",
+  "slug": "bebop-hook-arena",
+  "name": "Bebop Hook Arena",
   "version": "0.1.0",
   "language": "LANGUAGE_TYPESCRIPT",
   "map": "bebop_arena_small"

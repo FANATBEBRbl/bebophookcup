@@ -44,6 +44,18 @@ fresh.loadSpawns()
 assert.match(fresh.addSpawn(a),/Spawn 1 saved/)
 assert.deepEqual(JSON.parse(stored)[0],{position:a.state.position,facing:a.state.eyeAngles})
 console.log('PASS: spawn persistence, failed writes, damaged file and explicit clear')
+const editedFile = stored
+stored = undefined
+const cleanHost = vm.runInContext('new Rounds()',context)
+cleanHost.loadSpawns()
+cleanHost.setReady(a,true)
+cleanHost.setReady(b,true)
+cover = true
+a.teleport = b.teleport
+cleanHost.update(seats,0)
+assert.equal(cleanHost.phase,'countdown')
+assert.equal(stored, undefined)
+stored = editedFile
 const picker = vm.runInContext('new Rounds()',context)
 let buttons = [], cursors = [], selected = []
 context.Action = props => { buttons.push(props); return props }
